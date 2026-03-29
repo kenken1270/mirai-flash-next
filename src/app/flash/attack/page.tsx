@@ -1,17 +1,12 @@
-﻿'use client'
+'use client'
 import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-
-type Card = {
-  id: number
-  word: string
-  meaning: string
-  reading?: string
-}
+import { loadFlashCardSet, loadFlashCardsV3 } from '@/lib/student'
+import type { FlashCardSet, FlashCardV3 } from '@/lib/student'
 
 type Result = {
-  card: Card
+  card: FlashCardV3
   answered: boolean
   correct: boolean
   timeUsed: number
@@ -25,7 +20,8 @@ function FlashAttackContent() {
   const setId = searchParams.get('setId') || '1'
   const setName = searchParams.get('setName') || '単語'
 
-  const [cards, setCards] = useState<Card[]>([])
+  const [cardSet, setCardSet] = useState<FlashCardSet | null>(null)
+  const [cards, setCards] = useState<FlashCardV3[]>([])
   const [current, setCurrent] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [timeLeft, setTimeLeft] = useState(TIME_LIMIT)
@@ -38,14 +34,15 @@ function FlashAttackContent() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
 
-      const { data } = await supabase
-        .from('flashcards')
-        .select('id, word, meaning, reading, phonetic, reading')
-        .eq('set_id', setId)
-        .limit(10)
+      const [fetchedSet, allCards] = await Promise.all([
+        loadFlashCardSet(Number(setId)),
+        loadFlashCardsV3(Number(setId)),
+      ])
 
-      if (data && data.length > 0) {
-        setCards([...data].sort(() => Math.random() - 0.5))
+      setCardSet(fetchedSet)
+
+      if (allCards.length > 0) {
+        setCards([...allCards].sort(() => Math.random() - 0.5).slice(0, 10))
         setPhase('ready')
       } else {
         setPhase('finished')
@@ -53,6 +50,17 @@ function FlashAttackContent() {
     }
     init()
   }, [router, setId])
+
+  // TTS
+  const speak = useCallback((text: string, langOverride?: string | null) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const utter = new SpeechSynthesisUtterance(text)
+    utter.lang = langOverride ?? cardSet?.tts_lang ?? 'ja-JP'
+    utter.rate = 0.9
+    utter.volume = 1.0
+    window.speechSynthesis.speak(utter)
+  }, [cardSet])
 
   const goNext = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -102,6 +110,11 @@ function FlashAttackContent() {
     if (flipped) return
     if (timerRef.current) clearInterval(timerRef.current)
     setFlipped(true)
+    // カードをめくったら lang1 を読み上げ
+    if (cards[current]) {
+      const lang1TTS = cards[current].tts_lang1 ?? cardSet?.lang1_tts_lang ?? cardSet?.tts_lang ?? 'ja-JP'
+      speak(cards[current].lang1, lang1TTS)
+    }
   }
 
   function handleJudge(correct: boolean) {
@@ -122,6 +135,9 @@ function FlashAttackContent() {
   const score = results.filter(r => r.correct).length
   const totalTime = results.reduce((a, r) => a + r.timeUsed, 0)
   const accuracy = results.length > 0 ? Math.round((score / results.length) * 100) : 0
+
+  const lang1Label = cardSet?.lang1_label ?? '表面'
+  const lang2Label = cardSet?.lang2_label ?? '裏面'
 
   if (phase === 'loading') return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50">
@@ -185,8 +201,8 @@ function FlashAttackContent() {
             <div key={i} className={"bg-white rounded-xl px-4 py-3 shadow-sm border flex items-center gap-3 " + (r.correct ? 'border-green-200' : 'border-red-200')}>
               <span className="text-xl">{r.correct ? '✅' : r.answered ? '❌' : '⏰'}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-800 truncate">{r.card.word}</p>
-                <p className="text-xs text-gray-400 truncate">{r.card.meaning}</p>
+                <p className="text-sm font-bold text-gray-800 truncate">{r.card.lang1}</p>
+                <p className="text-xs text-gray-400 truncate">{r.card.lang2}</p>
               </div>
               <span className="text-xs text-gray-400 flex-shrink-0">{r.timeUsed}s</span>
             </div>
@@ -207,6 +223,8 @@ function FlashAttackContent() {
   const card = cards[current]
   const timerPct = (timeLeft / TIME_LIMIT) * 100
   const timerColor = timeLeft > 6 ? 'bg-green-400' : timeLeft > 3 ? 'bg-yellow-400' : 'bg-red-500'
+  const lang1TTS = card.tts_lang1 ?? cardSet?.lang1_tts_lang ?? cardSet?.tts_lang ?? 'ja-JP'
+  const lang2TTS = card.tts_lang2 ?? cardSet?.lang2_tts_lang ?? 'ja-JP'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex flex-col">
@@ -233,13 +251,31 @@ function FlashAttackContent() {
             (flipped ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800 hover:shadow-xl cursor-pointer')}>
           {!flipped ? (
             <>
-              <p className="text-2xl font-bold text-center mb-3">{card.word}</p>
-              <p className="text-sm text-gray-400">タップして答えを見る</p>
+              <p className="text-xs text-gray-400 mb-3 tracking-widest uppercase">{lang1Label}</p>
+              <p className="text-2xl font-bold text-center mb-3">{card.lang1}</p>
+              {card.lang1_sub && <p className="text-sm text-gray-400 text-center">{card.lang1_sub}</p>}
+              <p className="text-sm text-gray-400 mt-3">タップして答えを見る ＋ 読み上げ</p>
             </>
           ) : (
             <>
-              <p className="text-xl font-bold text-center mb-2">{card.meaning}</p>
-              {card.reading && <p className="text-sm opacity-80 text-center">{card.reading}</p>}
+              <p className="text-xs opacity-60 mb-3 tracking-widest uppercase">{lang2Label}</p>
+              <p className="text-xl font-bold text-center mb-2">{card.lang2}</p>
+              {card.lang2_sub && <p className="text-sm opacity-80 text-center">{card.lang2_sub}</p>}
+              {card.lang3 && <p className="text-sm opacity-70 text-center mt-2">{card.lang3}</p>}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={(e) => { e.stopPropagation(); speak(card.lang1, lang1TTS) }}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-full text-sm font-bold transition"
+                >
+                  🔊 {lang1Label}
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); speak(card.lang2, lang2TTS) }}
+                  className="px-3 py-1.5 bg-white/20 hover:bg-white/30 rounded-full text-sm font-bold transition"
+                >
+                  🔊 {lang2Label}
+                </button>
+              </div>
             </>
           )}
         </button>
