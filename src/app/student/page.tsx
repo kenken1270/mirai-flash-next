@@ -22,46 +22,23 @@ export default function StudentHome() {
   const [user, setUser] = useState<UserRow | null>(null)
   const [news, setNews] = useState<NewsRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [debugMsg, setDebugMsg] = useState<string[]>([])
-
-  function log(msg: string) {
-    console.log(msg)
-    setDebugMsg(prev => [...prev, msg])
-  }
 
   useEffect(() => {
     async function init() {
-      log('🔍 セッション確認中...')
       const { data: { session } } = await supabase.auth.getSession()
-      log(`セッション: ${session ? session.user.email : 'なし'}`)
-
-      if (!session) {
-        router.push('/login')
-        return
-      }
-
+      if (!session) { router.push('/login'); return }
       const username = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
-      log(`ユーザー名: ${username}`)
 
       let userData = await loadUser(username)
-      log(`DBユーザー: ${userData ? 'あり' : 'なし（新規作成します）'}`)
-
-      // usersテーブルにない場合は自動作成
       if (!userData) {
-        log('👤 usersテーブルに新規挿入中...')
-        const { error: insertError } = await supabase.from('users').insert({
+        await supabase.from('users').insert({
           username,
           current_points: 0,
           streak: 0,
           last_visit_date: todayStr(),
           last_login_date: todayStr(),
         })
-        if (insertError) {
-          log(`❌ 挿入エラー: ${insertError.message}`)
-        } else {
-          log('✅ 新規ユーザー作成完了')
-          userData = await loadUser(username)
-        }
+        userData = await loadUser(username)
       }
 
       if (userData) {
@@ -76,13 +53,10 @@ export default function StudentHome() {
           userData.last_visit_date = today
         }
         setUser(userData)
-        log(`✅ ユーザー設定完了: XP=${userData.current_points}, streak=${userData.streak}`)
       }
 
       const newsData = await loadNews()
-      log(`📢 お知らせ: ${newsData.length}件`)
       setNews(newsData.filter(n => n.target_user === '全員' || n.target_user === username))
-
       setLoading(false)
     }
     init()
@@ -90,27 +64,18 @@ export default function StudentHome() {
 
   if (loading) {
     return (
-      <div className="p-4 space-y-2">
-        <div className="text-center py-8">
-          <div className="text-4xl animate-bounce mb-4">📚</div>
-          <p className="text-gray-500">読み込み中...</p>
-        </div>
-        <div className="bg-gray-100 rounded-xl p-3 text-xs font-mono space-y-1">
-          <p className="font-bold text-gray-600">🔍 デバッグログ:</p>
-          {debugMsg.map((m, i) => <p key={i} className="text-gray-700">{m}</p>)}
-        </div>
+      <div className="flex flex-col items-center justify-center py-20 gap-3">
+        <div className="text-4xl animate-bounce">📚</div>
+        <p className="text-gray-500">読み込み中...</p>
       </div>
     )
   }
 
   if (!user) {
     return (
-      <div className="p-4 space-y-3">
+      <div className="p-4">
         <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-sm text-red-700">
-          ❌ ユーザーデータが取得できませんでした
-        </div>
-        <div className="bg-gray-100 rounded-xl p-3 text-xs font-mono space-y-1">
-          {debugMsg.map((m, i) => <p key={i}>{m}</p>)}
+          ❌ ユーザーデータが取得できませんでした。再ログインしてください。
         </div>
       </div>
     )
@@ -122,7 +87,6 @@ export default function StudentHome() {
 
   return (
     <div className="space-y-4">
-      {/* ウェルカムカード */}
       <div className="bg-gradient-to-r from-yellow-400 to-orange-400 rounded-2xl p-5 shadow-md text-white">
         <div className="flex items-center justify-between">
           <div>
@@ -136,7 +100,6 @@ export default function StudentHome() {
         </div>
       </div>
 
-      {/* レベル・XPカード */}
       <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
         <div className="flex items-center justify-between mb-2">
           <div>
@@ -146,17 +109,14 @@ export default function StudentHome() {
           <span className="text-yellow-500 font-bold">⚡ {xp.toLocaleString()} XP</span>
         </div>
         <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-yellow-400 to-orange-400 h-3 rounded-full transition-all duration-500"
-            style={{ width: `${progress}%` }}
-          />
+          <div className="bg-gradient-to-r from-yellow-400 to-orange-400 h-3 rounded-full transition-all duration-500"
+            style={{ width: progress + '%' }} />
         </div>
         <p className="text-xs text-gray-400 mt-1 text-right">
           次のレベルまで {(nextXp - xp).toLocaleString()} XP
         </p>
       </div>
 
-      {/* お知らせ */}
       {news.length > 0 && (
         <div className="space-y-2">
           <h3 className="font-bold text-gray-700">📢 お知らせ</h3>
@@ -168,32 +128,30 @@ export default function StudentHome() {
         </div>
       )}
 
-      {/* メニュー */}
       <div>
         <h3 className="font-bold text-gray-700 mb-2">📌 メニュー</h3>
         <div className="grid grid-cols-2 gap-3">
           {[
-            { href: '/student/schedule', icon: '📅', label: '今日の学習',   color: 'bg-blue-50 border-blue-200 text-blue-700' },
-            { href: '/student/plan',     icon: '🗺️', label: '計画確認',     color: 'bg-green-50 border-green-200 text-green-700' },
-            { href: '/student/test',     icon: '✏️', label: '小テスト',     color: 'bg-purple-50 border-purple-200 text-purple-700' },
-            { href: '/student/gacha',    icon: '🎁', label: 'ガチャ',       color: 'bg-pink-50 border-pink-200 text-pink-700' },
-          ].map(({ href, icon, label, color }) => (
-            <a key={href} href={href}
-              className={`border rounded-xl p-4 flex flex-col items-center gap-1 shadow-sm hover:shadow-md transition ${color}`}>
+            { path: '/student/schedule', icon: '📅', label: '今日の学習',   color: 'bg-blue-50 border-blue-200 text-blue-700' },
+            { path: '/student/plan',     icon: '🗺️', label: '計画確認',     color: 'bg-green-50 border-green-200 text-green-700' },
+            { path: '/student/test',     icon: '✏️', label: '小テスト',     color: 'bg-purple-50 border-purple-200 text-purple-700' },
+            { path: '/student/gacha',    icon: '🎁', label: 'ガチャ',       color: 'bg-pink-50 border-pink-200 text-pink-700' },
+          ].map(({ path, icon, label, color }) => (
+            <button key={path} onClick={() => router.push(path)}
+              className={"border rounded-xl p-4 flex flex-col items-center gap-1 shadow-sm hover:shadow-md transition " + color}>
               <span className="text-3xl">{icon}</span>
               <span className="font-bold text-sm">{label}</span>
-            </a>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* 単語学習リンク */}
-      <a href="/flash"
-        className="block bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-2xl p-4 shadow-md text-center hover:opacity-90 transition">
+      <button onClick={() => router.push('/flash')}
+        className="w-full bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-2xl p-4 shadow-md text-center hover:opacity-90 transition">
         <div className="text-2xl mb-1">🃏</div>
         <div className="font-bold">単語学習アプリへ</div>
         <div className="text-xs opacity-80 mt-1">フラッシュカードで単語を覚えよう！</div>
-      </a>
+      </button>
     </div>
   )
 }

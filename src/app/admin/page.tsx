@@ -37,6 +37,7 @@ export default function AdminPage() {
   const [taskType, setTaskType] = useState('lesson')
   const [taskVideo, setTaskVideo] = useState('')
   const [taskPage, setTaskPage] = useState('')
+  const [taskPlanned, setTaskPlanned] = useState(0)
   const [taskSaving, setTaskSaving] = useState(false)
   const [taskMsg, setTaskMsg] = useState('')
 
@@ -404,6 +405,12 @@ export default function AdminPage() {
                       <label className="text-xs text-gray-500 mb-1 block">ページ範囲（任意）</label>
                       <input value={taskPage} onChange={e => setTaskPage(e.target.value)}
                         placeholder="例: P.10-15"
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">目標時間（分）</label>
+                      <input type="number" min="0" value={taskPlanned} onChange={e => setTaskPlanned(Number(e.target.value))}
+                        placeholder="例: 15"
                         className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-yellow-400" />
                     </div>
                     <div>
