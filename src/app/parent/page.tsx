@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -16,7 +16,7 @@ type DetailData = {
   recentTasks: { task_name: string; mid_plan: string; is_done: number; deadline: string }[]
 }
 
-export default function ParentPage() {
+function ParentContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const targetUser = searchParams.get('user') ?? ''
@@ -386,5 +386,20 @@ export default function ParentPage() {
 
       </div>
     </div>
+  )
+}
+
+export default function ParentPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-green-50 to-teal-100">
+        <div className="text-center space-y-3">
+          <div className="text-5xl animate-bounce">📊</div>
+          <p className="text-gray-500">読み込み中...</p>
+        </div>
+      </div>
+    }>
+      <ParentContent />
+    </Suspense>
   )
 }
