@@ -340,7 +340,7 @@ export default function ParentPage() {
               'bg-gray-100 text-gray-500'
             )}>
               {todayPct === 100 && detail.todayTotal > 0 ? '🎉 今日のタスクを全て終わらせました！素晴らしい！' :
-               detail.flashToday > 10 ? 🃏 単語を枚も学習しました！ :
+               detail.flashToday > 10 ? '🃏 単語を' + detail.flashToday + '枚も学習しました！' :
                detail.todayDone > 0 || detail.flashToday > 0 ? '📚 今日も頑張って勉強しています！' :
                '😴 今日はまだ学習していません'}
             </div>
