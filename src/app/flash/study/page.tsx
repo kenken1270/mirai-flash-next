@@ -117,6 +117,23 @@ function StudyContent() {
     init()
   }, [setId, router])
 
+  // 🔊 音声読み上げ関数
+  const speak = useCallback((text: string, category: string) => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const utter = new SpeechSynthesisUtterance(text)
+    if (category?.includes("英語") || category?.includes("English")) {
+      utter.lang = "en-US"
+    } else if (category?.includes("中国語") || category?.includes("Chinese") || category?.includes("みんなの日本語")) {
+      utter.lang = "zh-CN"
+    } else {
+      utter.lang = "ja-JP"
+    }
+    utter.rate = 0.9
+    utter.volume = 1.0
+    window.speechSynthesis.speak(utter)
+  }, [])
+
   async function saveReview(card: Card, quality: number) {
     const existing = logs.get(card.id)
     const ef = existing?.ease_factor ?? 2.5
@@ -326,6 +343,12 @@ function StudyContent() {
                 {card.reading && card.reading !== card.word && (
                   <p className="text-gray-500 mt-2">{card.reading}</p>
                 )}
+                <button
+                  onClick={() => speak(card.word, card.category)}
+                  className="mt-4 px-4 py-2 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded-full text-sm font-bold transition active:scale-95"
+                >
+                  🔊 読み上げ
+                </button>
               </>
             )}
           </div>
@@ -347,6 +370,20 @@ function StudyContent() {
               <>
                 <p className="text-2xl font-bold text-gray-800">{card.meaning}</p>
                 {card.reading && <p className="text-gray-500 mt-1">読み：{card.reading}</p>}
+                <div className="flex gap-2 justify-center mt-3">
+                  <button
+                    onClick={() => speak(card.word, card.category)}
+                    className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 rounded-full text-sm font-bold transition active:scale-95"
+                  >
+                    🔊 単語
+                  </button>
+                  <button
+                    onClick={() => speak(card.meaning, "ja-JP")}
+                    className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-full text-sm font-bold transition active:scale-95"
+                  >
+                    🔊 意味
+                  </button>
+                </div>
                 {card.phonetic && <p className="text-gray-400 text-sm">{card.phonetic}</p>}
                 {card.meaning_zh && (
                   <p className="text-orange-600 mt-2 text-sm">🇨🇳 {card.meaning_zh}</p>
