@@ -5,8 +5,8 @@ import { supabase } from '@/lib/supabase'
 
 type Card = {
   id: number
-  front_text: string
-  back_text: string
+  word: string
+  meaning: string
   reading?: string
 }
 
@@ -40,7 +40,7 @@ function FlashAttackContent() {
 
       const { data } = await supabase
         .from('flashcards')
-        .select('id, front_text, back_text, reading')
+        .select('id, word, meaning, reading, phonetic, reading')
         .eq('set_id', setId)
         .limit(10)
 
@@ -185,8 +185,8 @@ function FlashAttackContent() {
             <div key={i} className={"bg-white rounded-xl px-4 py-3 shadow-sm border flex items-center gap-3 " + (r.correct ? 'border-green-200' : 'border-red-200')}>
               <span className="text-xl">{r.correct ? '✅' : r.answered ? '❌' : '⏰'}</span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-gray-800 truncate">{r.card.front_text}</p>
-                <p className="text-xs text-gray-400 truncate">{r.card.back_text}</p>
+                <p className="text-sm font-bold text-gray-800 truncate">{r.card.word}</p>
+                <p className="text-xs text-gray-400 truncate">{r.card.meaning}</p>
               </div>
               <span className="text-xs text-gray-400 flex-shrink-0">{r.timeUsed}s</span>
             </div>
@@ -233,12 +233,12 @@ function FlashAttackContent() {
             (flipped ? 'bg-indigo-600 text-white' : 'bg-white text-gray-800 hover:shadow-xl cursor-pointer')}>
           {!flipped ? (
             <>
-              <p className="text-2xl font-bold text-center mb-3">{card.front_text}</p>
+              <p className="text-2xl font-bold text-center mb-3">{card.word}</p>
               <p className="text-sm text-gray-400">タップして答えを見る</p>
             </>
           ) : (
             <>
-              <p className="text-xl font-bold text-center mb-2">{card.back_text}</p>
+              <p className="text-xl font-bold text-center mb-2">{card.meaning}</p>
               {card.reading && <p className="text-sm opacity-80 text-center">{card.reading}</p>}
             </>
           )}
