@@ -15,7 +15,7 @@ type ReviewLog = {
   ease_factor: number
   interval_days: number
   repetitions: number
-  next_review: string
+  next_review_date: string
   created_at: string
 }
 
@@ -29,7 +29,6 @@ type DailyStats = {
 export default function FlashGraphPage() {
   const router = useRouter()
   const [username, setUsername] = useState<string>('')
-  const [logs, setLogs] = useState<ReviewLog[]>([])
   const [dailyStats, setDailyStats] = useState<DailyStats[]>([])
   const [totalCards, setTotalCards] = useState(0)
   const [streak, setStreak] = useState(0)
@@ -55,13 +54,13 @@ export default function FlashGraphPage() {
       .order('created_at', { ascending: true })
 
     if (error || !data) { setLoading(false); return }
-    setLogs(data)
     setTotalCards(data.length)
 
-    // 日別集計
     const byDate: Record<string, { total: number; correct: number }> = {}
     data.forEach(log => {
-      const date = log.created_at ? log.created_at.slice(0, 10) : log.next_review
+      const raw = log.created_at || log.next_review_date || ''
+      const date = raw.slice(0, 10)
+      if (!date) return
       if (!byDate[date]) byDate[date] = { total: 0, correct: 0 }
       byDate[date].total++
       if (log.quality >= 3) byDate[date].correct++
@@ -78,22 +77,22 @@ export default function FlashGraphPage() {
       }))
     setDailyStats(stats)
 
-    // 全体正解率
     const totalCorrect = data.filter(l => l.quality >= 3).length
     setAvgAccuracy(data.length > 0 ? Math.round((totalCorrect / data.length) * 100) : 0)
 
-    // 連続学習日数（簡易計算）
-    const dates = [...new Set(data.map(l => l.created_at?.slice(0, 10) || l.next_review))].sort()
-    let s = 0
     const today = new Date().toISOString().slice(0, 10)
-    for (let i = dates.length - 1; i >= 0; i--) {
+    const dates = [...new Set(data.map(l => (l.created_at || l.next_review_date || '').slice(0, 10)))]
+      .filter(Boolean)
+      .sort()
+      .reverse()
+    let s = 0
+    for (let i = 0; i < dates.length; i++) {
       const expected = new Date(today)
-      expected.setDate(expected.getDate() - (dates.length - 1 - i))
+      expected.setDate(expected.getDate() - i)
       if (dates[i] === expected.toISOString().slice(0, 10)) s++
       else break
     }
     setStreak(s)
-
     setLoading(false)
   }
 
@@ -108,17 +107,16 @@ export default function FlashGraphPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-purple-50 pb-24">
-      {/* ヘッダー */}
       <div className="bg-white shadow-sm px-4 py-3 flex items-center gap-3">
-        <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-700">
+        <button onClick={() => router.back()} className="text-gray-500 hover:text-gray-700 text-sm">
           ← 戻る
         </button>
         <h1 className="text-lg font-bold text-indigo-700">📈 学習グラフ</h1>
+        <span className="ml-auto text-sm text-gray-400">{username}</span>
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
 
-        {/* サマリーカード */}
         <div className="grid grid-cols-3 gap-3">
           <div className="bg-white rounded-2xl p-4 text-center shadow-sm border border-indigo-100">
             <div className="text-3xl font-bold text-indigo-600">{totalCards}</div>
@@ -134,7 +132,6 @@ export default function FlashGraphPage() {
           </div>
         </div>
 
-        {/* 日別学習枚数グラフ */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <h2 className="text-sm font-bold text-gray-700 mb-4">📅 日別学習枚数（直近14日）</h2>
           {dailyStats.length === 0 ? (
@@ -154,7 +151,6 @@ export default function FlashGraphPage() {
           )}
         </div>
 
-        {/* 正解率推移グラフ */}
         <div className="bg-white rounded-2xl p-4 shadow-sm">
           <h2 className="text-sm font-bold text-gray-700 mb-4">🎯 正解率推移（%）</h2>
           {dailyStats.length === 0 ? (
@@ -179,7 +175,6 @@ export default function FlashGraphPage() {
           )}
         </div>
 
-        {/* Flash教材へ戻るボタン */}
         <button
           onClick={() => router.push('/flash')}
           className="w-full py-3 bg-indigo-600 text-white rounded-2xl font-bold shadow hover:bg-indigo-700 transition"
