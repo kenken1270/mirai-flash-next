@@ -4,16 +4,21 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 const STUDENT_PASSWORD = 'Mirai2026'
+const ADMIN_PASSWORD = 'admin'
+
+type Role = 'student' | 'parent' | 'admin'
 
 export default function LoginPage() {
   const router = useRouter()
+  const [role, setRole] = useState<Role>('student')
   const [userList, setUserList] = useState<string[]>([])
   const [selected, setSelected] = useState('')
   const [password, setPassword] = useState('')
+  const [pin, setPin] = useState('')
+  const [parentName, setParentName] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(true)
-  const [isAdmin, setIsAdmin] = useState(false)
 
   useEffect(() => {
     async function fetchUsers() {
@@ -24,21 +29,30 @@ export default function LoginPage() {
       if (data) {
         const names = data.map((r: { username: string }) => r.username)
         setUserList(names)
-        if (names.length > 0) setSelected(names[0])
+        if (names.length > 0) {
+          setSelected(names[0])
+          setParentName(names[0])
+        }
       }
       setLoadingUsers(false)
     }
     fetchUsers()
   }, [])
 
+  function resetForm() {
+    setPassword('')
+    setPin('')
+    setError('')
+  }
+
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
 
-    if (isAdmin) {
-      // 管理者：localStorageにフラグを立ててadminページへ
-      if (password === 'admin') {
+    // ===== 管理者 =====
+    if (role === 'admin') {
+      if (password === ADMIN_PASSWORD) {
         localStorage.setItem('mirai_admin', 'true')
         router.push('/admin')
       } else {
@@ -48,7 +62,22 @@ export default function LoginPage() {
       return
     }
 
-    // 生徒：まずパスワード確認（共通パスワード）
+    // ===== 保護者 =====
+    if (role === 'parent') {
+      if (!parentName) { setError('お子さんの名前を選んでください'); setLoading(false); return }
+      const { data, error: dbError } = await supabase
+        .from('users')
+        .select('pin')
+        .eq('username', parentName)
+        .single()
+      if (dbError || !data) { setError('ユーザーが見つかりません'); setLoading(false); return }
+      if (data.pin !== pin) { setError('PINコードが違います'); setLoading(false); return }
+      localStorage.setItem('mirai_parent', parentName)
+      router.push('/parent?user=' + encodeURIComponent(parentName))
+      return
+    }
+
+    // ===== 生徒 =====
     if (password !== STUDENT_PASSWORD) {
       setError('パスワードが違います')
       setLoading(false)
@@ -56,33 +85,27 @@ export default function LoginPage() {
     }
 
     const email = `${selected}@mirai-juku.internal`
-
-    // ① まずログイン試行
     const { error: signInError } = await supabase.auth.signInWithPassword({
       email,
       password: STUDENT_PASSWORD,
     })
 
     if (!signInError) {
-      // ログイン成功
       router.push('/student')
       return
     }
 
-    // ② ログイン失敗 → 新規作成を試みる
     const { error: signUpError } = await supabase.auth.signUp({
       email,
       password: STUDENT_PASSWORD,
     })
 
     if (signUpError) {
-      // すでに存在するがパスワードが違う場合
       setError('ログインできませんでした。管理者に連絡してください。')
       setLoading(false)
       return
     }
 
-    // ③ 作成後に再ログイン
     const { error: retryError } = await supabase.auth.signInWithPassword({
       email,
       password: STUDENT_PASSWORD,
@@ -97,6 +120,12 @@ export default function LoginPage() {
     router.push('/student')
   }
 
+  const TABS: { key: Role; label: string; icon: string }[] = [
+    { key: 'student', label: '生徒',  icon: '🎒' },
+    { key: 'parent',  label: '保護者', icon: '👨‍👩‍👧' },
+    { key: 'admin',   label: '管理者', icon: '👨‍🏫' },
+  ]
+
   return (
     <div className="min-h-screen bg-amber-50 flex items-center justify-center px-4">
       <div className="w-full max-w-sm">
@@ -109,55 +138,72 @@ export default function LoginPage() {
           <p className="text-gray-600 mt-2 text-sm">楽しく学んで、未来を切り開こう！</p>
         </div>
 
-        {/* フォーム */}
-        <div className="bg-white rounded-2xl shadow-md p-6">
-          <h2 className="text-xl font-bold text-center text-gray-700 mb-5">🔐 ログイン</h2>
+        <div className="bg-white rounded-2xl shadow-md overflow-hidden">
 
-          <form onSubmit={handleLogin} className="space-y-4">
+          {/* タブ */}
+          <div className="flex border-b">
+            {TABS.map(t => (
+              <button key={t.key} type="button"
+                onClick={() => { setRole(t.key); resetForm() }}
+                className={"flex-1 py-3 text-sm font-bold transition " +
+                  (role === t.key
+                    ? 'bg-yellow-400 text-white border-b-2 border-yellow-500'
+                    : 'text-gray-400 hover:text-gray-600 hover:bg-gray-50')}>
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
 
-            {!isAdmin ? (
+          <form onSubmit={handleLogin} className="p-6 space-y-4">
+
+            {/* 生徒 */}
+            {role === 'student' && (
               <div>
-                <label className="block text-sm font-medium text-gray-600 mb-1">
-                  なまえを選んでください
-                </label>
+                <label className="block text-sm font-medium text-gray-600 mb-1">なまえを選んでください</label>
                 {loadingUsers ? (
-                  <div className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-400 text-sm">
-                    読み込み中...
-                  </div>
+                  <div className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-400 text-sm">読み込み中...</div>
                 ) : (
-                  <select
-                    value={selected}
-                    onChange={e => setSelected(e.target.value)}
-                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800
-                      focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-white text-base"
-                  >
-                    {userList.map(name => (
-                      <option key={name} value={name}>{name}</option>
-                    ))}
+                  <select value={selected} onChange={e => setSelected(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-white text-base">
+                    {userList.map(name => <option key={name} value={name}>{name}</option>)}
                   </select>
                 )}
               </div>
-            ) : (
-              <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
-                <span className="text-2xl">👨‍🏫</span>
-                <p className="font-bold text-gray-700 mt-1">管理者ログイン</p>
+            )}
+
+            {/* 保護者 */}
+            {role === 'parent' && (
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">お子さんの名前</label>
+                {loadingUsers ? (
+                  <div className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-400 text-sm">読み込み中...</div>
+                ) : (
+                  <select value={parentName} onChange={e => setParentName(e.target.value)}
+                    className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-400 bg-white text-base">
+                    {userList.map(name => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                )}
               </div>
             )}
 
-            <div>
-              <label className="block text-sm font-medium text-gray-600 mb-1">
-                パスワード
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                placeholder="パスワードを入力"
-                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800
-                  focus:outline-none focus:ring-2 focus:ring-yellow-400"
-                required
-              />
-            </div>
+            {/* パスワード / PIN */}
+            {role === 'parent' ? (
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">PINコード（4桁）</label>
+                <input type="password" value={pin} onChange={e => setPin(e.target.value)}
+                  placeholder="0000" maxLength={4}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-400 text-center text-2xl tracking-widest"
+                  required />
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-600 mb-1">パスワード</label>
+                <input type="password" value={password} onChange={e => setPassword(e.target.value)}
+                  placeholder="パスワードを入力"
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                  required />
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm">
@@ -165,21 +211,15 @@ export default function LoginPage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading || loadingUsers}
-              className="w-full bg-yellow-400 hover:bg-yellow-500 text-white font-bold py-3
-                rounded-xl transition disabled:opacity-50 text-base"
-            >
-              {loading ? '確認中...' : isAdmin ? '👨‍🏫 管理者としてログイン' : '🚀 ログイン'}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setIsAdmin(!isAdmin); setError(''); setPassword('') }}
-              className="w-full text-center text-xs text-gray-400 hover:text-gray-600 transition py-1"
-            >
-              {isAdmin ? '← 生徒ログインに戻る' : '👨‍🏫 管理者の方はこちら'}
+            <button type="submit" disabled={loading || loadingUsers}
+              className={"w-full font-bold py-3 rounded-xl transition disabled:opacity-50 text-base text-white " +
+                (role === 'admin' ? 'bg-gray-700 hover:bg-gray-800' :
+                 role === 'parent' ? 'bg-green-500 hover:bg-green-600' :
+                 'bg-yellow-400 hover:bg-yellow-500')}>
+              {loading ? '確認中...' :
+               role === 'admin' ? '👨‍🏫 管理者としてログイン' :
+               role === 'parent' ? '👨‍👩‍👧 保護者として確認' :
+               '🚀 ログイン'}
             </button>
 
           </form>
