@@ -9,20 +9,21 @@ type FlashSet = {
   category: string
   grade: string
   description: string
-  subject: string
-  tts_lang: string
-  lang1_label: string
-  lang2_label: string
-  lang3_label: string
-  lang1_tts_lang: string
-  lang2_tts_lang: string
+}
+
+type ReviewLog = {
+  flashcard_id: number
+  next_review_date: string
+  quality: number
 }
 
 export default function FlashTopPage() {
   const router = useRouter()
   const [username, setUsername] = useState('')
   const [sets, setSets] = useState<FlashSet[]>([])
+  const [logs, setLogs] = useState<ReviewLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [userLang, setUserLang] = useState<'ja'|'zh'>('ja')
 
   useEffect(() => {
     async function init() {
@@ -30,44 +31,31 @@ export default function FlashTopPage() {
       if (!session) { router.push('/login'); return }
       const uname = session.user.email?.replace('@mirai-juku.internal','') ?? ''
       setUsername(uname)
-      const { data } = await supabase
-        .from('flashcard_sets')
-        .select('id,set_name,category,grade,description,subject,tts_lang,lang1_label,lang2_label,lang3_label,lang1_tts_lang,lang2_tts_lang')
-        .order('id')
-      setSets(data ?? [])
+      const [setsRes, logsRes, userRes] = await Promise.all([
+        supabase.from('flashcard_sets').select('id,set_name,category,grade,description').order('id'),
+        supabase.from('review_logs').select('flashcard_id,next_review_date,quality').eq('username', uname),
+        supabase.from('users').select('lang').eq('username', uname).limit(1),
+      ])
+      setSets(setsRes.data ?? [])
+      setLogs(logsRes.data ?? [])
+      if (userRes.data?.[0]?.lang) setUserLang(userRes.data[0].lang as 'ja'|'zh')
       setLoading(false)
     }
     init()
   }, [router])
 
   function getCategoryColor(category: string) {
-    if (category?.includes('英検')) return 'from-green-500 to-teal-500'
-    if (category?.includes('みんなの日本語')) return 'from-blue-500 to-indigo-500'
     if (category?.includes('中国語') || category?.includes('漢語')) return 'from-red-500 to-orange-500'
-    if (category?.includes('国語') || category?.includes('漢字')) return 'from-yellow-500 to-orange-400'
-    if (category?.includes('算数') || category?.includes('数学')) return 'from-purple-500 to-pink-500'
-    if (category?.includes('理科')) return 'from-teal-500 to-cyan-500'
-    if (category?.includes('社会')) return 'from-amber-500 to-yellow-500'
+    if (category?.includes('日本語') || category?.includes('みんなの')) return 'from-blue-500 to-indigo-500'
+    if (category?.includes('英語')) return 'from-green-500 to-teal-500'
     return 'from-purple-500 to-pink-500'
   }
 
   function getCategoryIcon(category: string) {
-    if (category?.includes('英検')) return '🇬🇧'
-    if (category?.includes('みんなの日本語')) return '🇯🇵'
     if (category?.includes('中国語') || category?.includes('漢語')) return '🇨🇳'
-    if (category?.includes('国語') || category?.includes('漢字')) return '📖'
-    if (category?.includes('算数') || category?.includes('数学')) return '🔢'
-    if (category?.includes('理科')) return '🔬'
-    if (category?.includes('社会')) return '🌍'
+    if (category?.includes('日本語') || category?.includes('みんなの')) return '🇯🇵'
+    if (category?.includes('英語')) return '🇬🇧'
     return '📚'
-  }
-
-  function getTTSLabel(lang: string | null) {
-    if (!lang) return null
-    if (lang.startsWith('en')) return { label: 'English', flag: '🔊🇬🇧' }
-    if (lang.startsWith('zh')) return { label: '中文', flag: '🔊🇨🇳' }
-    if (lang.startsWith('ja')) return { label: '日本語', flag: '🔊🇯🇵' }
-    return { label: lang, flag: '🔊' }
   }
 
   if (loading) {
@@ -127,49 +115,30 @@ export default function FlashTopPage() {
             </h2>
             <div className="space-y-2">
               {catSets.map(s => (
-                <div key={s.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                <div key={s.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md transition-all overflow-hidden">
+                  {/* 通常学習ボタン */}
                   <button
                     onClick={() => router.push('/flash/study?setId=' + s.id + '&setName=' + encodeURIComponent(s.set_name))}
-                    className="w-full text-left p-4 hover:bg-indigo-50 transition-all">
+                    className="w-full text-left p-4 hover:bg-indigo-50 transition">
                     <div className="flex items-center gap-3">
                       <div className={"w-12 h-12 rounded-xl bg-gradient-to-br " + getCategoryColor(category) + " flex items-center justify-center flex-shrink-0 shadow"}>
                         <span className="text-2xl">{getCategoryIcon(category)}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="font-bold text-gray-800 text-sm">{s.set_name}</p>
-                        {s.grade && <p className="text-xs text-gray-500 mt-0.5">{s.grade}</p>}
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {s.lang1_label && (
-                            <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100">
-                              表: {s.lang1_label}
-                              {getTTSLabel(s.lang1_tts_lang) && (
-                                <span className="ml-1">{getTTSLabel(s.lang1_tts_lang)?.flag}</span>
-                              )}
-                            </span>
-                          )}
-                          {s.lang2_label && (
-                            <span className="text-xs bg-purple-50 text-purple-600 px-2 py-0.5 rounded-full border border-purple-100">
-                              裏: {s.lang2_label}
-                              {getTTSLabel(s.lang2_tts_lang) && (
-                                <span className="ml-1">{getTTSLabel(s.lang2_tts_lang)?.flag}</span>
-                              )}
-                            </span>
-                          )}
-                        </div>
+                        {s.grade && <p className="text-xs text-gray-400 mt-0.5">{s.grade}</p>}
+                        {s.description && <p className="text-xs text-gray-400 truncate">{s.description}</p>}
                       </div>
                       <span className="text-gray-300 text-xl flex-shrink-0">›</span>
                     </div>
                   </button>
-                  <div className="border-t border-gray-100 px-4 py-2 bg-gray-50 flex gap-2">
-                    <button
-                      onClick={() => router.push('/flash/study?setId=' + s.id + '&setName=' + encodeURIComponent(s.set_name))}
-                      className="flex-1 text-xs text-center py-1.5 bg-indigo-500 hover:bg-indigo-600 text-white rounded-xl font-bold transition">
-                      📖 学習する
-                    </button>
+                  {/* タイムアタックボタン */}
+                  <div className="border-t border-gray-100 px-4 py-2">
                     <button
                       onClick={() => router.push('/flash/attack?setId=' + s.id + '&setName=' + encodeURIComponent(s.set_name))}
-                      className="flex-1 text-xs text-center py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-xl font-bold transition">
-                      ⚡ タイムアタック
+                      className="text-xs text-orange-500 font-bold flex items-center gap-1 hover:text-orange-600 transition">
+                      <span>⚡</span>
+                      <span>タイムアタックで挑戦</span>
                     </button>
                   </div>
                 </div>
