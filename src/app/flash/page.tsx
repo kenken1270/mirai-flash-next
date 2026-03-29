@@ -109,6 +109,15 @@ export default function FlashTopPage() {
           </p>
         </div>
 
+        {/* グラフボタン */}
+        <button
+          onClick={() => router.push(`+"`"+`/flash/graph`+"`"+`)}
+          className="w-full py-3 bg-white rounded-2xl shadow-sm border border-indigo-100 hover:shadow-md hover:border-indigo-300 transition flex items-center justify-center gap-2 text-indigo-600 font-bold"
+        >
+          <span className="text-xl">📈</span>
+          学習グラフを見る
+        </button>
+
         {/* カテゴリ別教材一覧 */}
         {Object.entries(grouped).map(([category, catSets]) => (
           <div key={category} className="space-y-2">
