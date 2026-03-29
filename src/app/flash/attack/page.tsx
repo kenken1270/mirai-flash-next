@@ -1,5 +1,5 @@
 ﻿'use client'
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -19,28 +19,24 @@ type Result = {
 
 const TIME_LIMIT = 10
 
-export default function FlashAttackPage() {
+function FlashAttackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const setId = searchParams.get('setId') || '1'
   const setName = searchParams.get('setName') || '単語'
 
-  const [username, setUsername] = useState('')
   const [cards, setCards] = useState<Card[]>([])
   const [current, setCurrent] = useState(0)
   const [flipped, setFlipped] = useState(false)
   const [timeLeft, setTimeLeft] = useState(TIME_LIMIT)
   const [results, setResults] = useState<Result[]>([])
   const [phase, setPhase] = useState<'loading' | 'ready' | 'playing' | 'finished'>('loading')
-  const [startTime, setStartTime] = useState(0)
   const timerRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') || ''
-      setUsername(uname)
 
       const { data } = await supabase
         .from('flashcards')
@@ -49,9 +45,7 @@ export default function FlashAttackPage() {
         .limit(10)
 
       if (data && data.length > 0) {
-        // シャッフル
-        const shuffled = [...data].sort(() => Math.random() - 0.5)
-        setCards(shuffled)
+        setCards([...data].sort(() => Math.random() - 0.5))
         setPhase('ready')
       } else {
         setPhase('finished')
@@ -60,9 +54,21 @@ export default function FlashAttackPage() {
     init()
   }, [router, setId])
 
+  const goNext = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current)
+    setCurrent(prev => {
+      if (prev + 1 >= cards.length) {
+        setPhase('finished')
+        return prev
+      }
+      setFlipped(false)
+      setTimeLeft(TIME_LIMIT)
+      return prev + 1
+    })
+  }, [cards.length])
+
   const handleTimeout = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current)
-    const timeUsed = TIME_LIMIT - timeLeft
     setResults(prev => [...prev, {
       card: cards[current],
       answered: false,
@@ -70,7 +76,7 @@ export default function FlashAttackPage() {
       timeUsed: TIME_LIMIT
     }])
     goNext()
-  }, [cards, current, timeLeft])
+  }, [cards, current, goNext])
 
   useEffect(() => {
     if (phase !== 'playing' || flipped) return
@@ -90,7 +96,6 @@ export default function FlashAttackPage() {
   function startGame() {
     setPhase('playing')
     setTimeLeft(TIME_LIMIT)
-    setStartTime(Date.now())
   }
 
   function handleFlip() {
@@ -101,31 +106,23 @@ export default function FlashAttackPage() {
 
   function handleJudge(correct: boolean) {
     const timeUsed = TIME_LIMIT - timeLeft
-    setResults(prev => [...prev, {
-      card: cards[current],
-      answered: true,
-      correct,
-      timeUsed
-    }])
+    setResults(prev => [...prev, { card: cards[current], answered: true, correct, timeUsed }])
     goNext()
   }
 
-  function goNext() {
-    if (timerRef.current) clearInterval(timerRef.current)
-    if (current + 1 >= cards.length) {
-      setPhase('finished')
-      return
-    }
-    setCurrent(prev => prev + 1)
+  function handleRetry() {
+    setCurrent(0)
     setFlipped(false)
+    setResults([])
     setTimeLeft(TIME_LIMIT)
+    setCards(prev => [...prev].sort(() => Math.random() - 0.5))
+    setPhase('ready')
   }
 
   const score = results.filter(r => r.correct).length
   const totalTime = results.reduce((a, r) => a + r.timeUsed, 0)
   const accuracy = results.length > 0 ? Math.round((score / results.length) * 100) : 0
 
-  // ── ローディング ──
   if (phase === 'loading') return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50">
       <div className="text-center">
@@ -135,7 +132,6 @@ export default function FlashAttackPage() {
     </div>
   )
 
-  // ── スタート画面 ──
   if (phase === 'ready') return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50 px-4">
       <div className="bg-white rounded-3xl shadow-lg p-8 max-w-sm w-full text-center space-y-6">
@@ -154,22 +150,18 @@ export default function FlashAttackPage() {
           className="w-full py-4 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-2xl font-bold text-lg shadow-lg hover:opacity-90 transition active:scale-95">
           🚀 スタート！
         </button>
-        <button onClick={() => router.back()}
-          className="text-sm text-gray-400 hover:text-gray-600">← 戻る</button>
+        <button onClick={() => router.back()} className="text-sm text-gray-400 hover:text-gray-600">← 戻る</button>
       </div>
     </div>
   )
 
-  // ── 結果画面 ──
   if (phase === 'finished') return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 pb-10">
       <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-4 text-center">
         <h1 className="text-xl font-bold">⚡ タイムアタック 結果</h1>
         <p className="text-sm opacity-80 mt-0.5">{setName}</p>
       </div>
-
       <div className="max-w-sm mx-auto px-4 py-6 space-y-4">
-        {/* スコアカード */}
         <div className="bg-white rounded-3xl shadow-md p-6 text-center space-y-4">
           <div className="text-6xl font-bold text-orange-500">{score}<span className="text-2xl text-gray-400">/{cards.length}</span></div>
           <p className="text-gray-500 text-sm">正解数</p>
@@ -187,14 +179,10 @@ export default function FlashAttackPage() {
           {accuracy >= 50 && accuracy < 80 && <p className="text-blue-500 font-bold text-lg">👍 よくできました！</p>}
           {accuracy < 50 && <p className="text-gray-500 font-bold text-lg">💪 もう一度チャレンジ！</p>}
         </div>
-
-        {/* 問題別結果 */}
         <div className="space-y-2">
           <p className="text-sm font-bold text-gray-600">📝 問題別結果</p>
           {results.map((r, i) => (
-            <div key={i}
-              className={"bg-white rounded-xl px-4 py-3 shadow-sm border flex items-center gap-3 " +
-                (r.correct ? 'border-green-200' : 'border-red-200')}>
+            <div key={i} className={"bg-white rounded-xl px-4 py-3 shadow-sm border flex items-center gap-3 " + (r.correct ? 'border-green-200' : 'border-red-200')}>
               <span className="text-xl">{r.correct ? '✅' : r.answered ? '❌' : '⏰'}</span>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-bold text-gray-800 truncate">{r.card.front_text}</p>
@@ -204,9 +192,7 @@ export default function FlashAttackPage() {
             </div>
           ))}
         </div>
-
-        {/* ボタン */}
-        <button onClick={() => { setCurrent(0); setFlipped(false); setResults([]); setTimeLeft(TIME_LIMIT); setPhase('ready'); const shuffled = [...cards].sort(() => Math.random() - 0.5); setCards(shuffled) }}
+        <button onClick={handleRetry}
           className="w-full py-3 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-2xl font-bold shadow hover:opacity-90 transition">
           🔄 もう一度チャレンジ
         </button>
@@ -218,38 +204,29 @@ export default function FlashAttackPage() {
     </div>
   )
 
-  // ── プレイ画面 ──
   const card = cards[current]
   const timerPct = (timeLeft / TIME_LIMIT) * 100
   const timerColor = timeLeft > 6 ? 'bg-green-400' : timeLeft > 3 ? 'bg-yellow-400' : 'bg-red-500'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-orange-50 to-red-50 flex flex-col">
-      {/* ヘッダー */}
       <div className="bg-gradient-to-r from-orange-500 to-red-500 text-white px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-bold">{current + 1} / {cards.length}</span>
           <span className="text-2xl font-bold">{timeLeft}s</span>
           <button onClick={() => router.push('/flash')} className="text-sm opacity-80 hover:opacity-100">✕</button>
         </div>
-        {/* タイマーバー */}
         <div className="w-full bg-white/30 rounded-full h-2">
-          <div className={"h-2 rounded-full transition-all duration-1000 " + timerColor}
-            style={{ width: timerPct + '%' }}></div>
+          <div className={"h-2 rounded-full transition-all duration-1000 " + timerColor} style={{ width: timerPct + '%' }}></div>
         </div>
       </div>
-
-      {/* 問題数プログレス */}
       <div className="px-4 pt-3">
         <div className="flex gap-1">
           {cards.map((_, i) => (
-            <div key={i} className={"h-1.5 flex-1 rounded-full " +
-              (i < current ? 'bg-orange-400' : i === current ? 'bg-orange-300' : 'bg-gray-200')}></div>
+            <div key={i} className={"h-1.5 flex-1 rounded-full " + (i < current ? 'bg-orange-400' : i === current ? 'bg-orange-300' : 'bg-gray-200')}></div>
           ))}
         </div>
       </div>
-
-      {/* カード */}
       <div className="flex-1 flex flex-col items-center justify-center px-4 py-6">
         <button onClick={handleFlip}
           className={"w-full max-w-sm min-h-48 rounded-3xl shadow-lg flex flex-col items-center justify-center p-6 transition-all active:scale-95 " +
@@ -266,8 +243,6 @@ export default function FlashAttackPage() {
             </>
           )}
         </button>
-
-        {/* 判定ボタン */}
         {flipped && (
           <div className="w-full max-w-sm mt-4 grid grid-cols-2 gap-3">
             <button onClick={() => handleJudge(false)}
@@ -282,5 +257,20 @@ export default function FlashAttackPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function FlashAttackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-red-50">
+        <div className="text-center">
+          <div className="text-5xl mb-4 animate-bounce">⚡</div>
+          <p className="text-gray-500">読み込み中...</p>
+        </div>
+      </div>
+    }>
+      <FlashAttackContent />
+    </Suspense>
   )
 }
