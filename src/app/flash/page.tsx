@@ -45,13 +45,6 @@ export default function FlashTopPage() {
     init()
   }, [router])
 
-  function getSetStats(setId: number, allCards: number) {
-    const today = new Date().toISOString().split('T')[0]
-    const setLogs = logs.filter(l => l.flashcard_id) // 全ログ（set_idがないので概算）
-    const dueCount = setLogs.filter(l => l.next_review_date <= today).length
-    return { dueCount }
-  }
-
   function getCategoryColor(category: string) {
     if (category?.includes('中国語') || category?.includes('漢語')) return 'from-red-500 to-orange-500'
     if (category?.includes('日本語') || category?.includes('みんなの')) return 'from-blue-500 to-indigo-500'
@@ -75,7 +68,6 @@ export default function FlashTopPage() {
     )
   }
 
-  // カテゴリでグループ化
   const grouped = sets.reduce<Record<string, FlashSet[]>>((acc, s) => {
     const k = s.category || 'その他'
     if (!acc[k]) acc[k] = []
@@ -85,7 +77,6 @@ export default function FlashTopPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-indigo-100 to-purple-50 pb-10">
-      {/* ヘッダー */}
       <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-4 shadow-lg">
         <div className="max-w-2xl mx-auto flex items-center justify-between">
           <div>
@@ -101,7 +92,6 @@ export default function FlashTopPage() {
 
       <div className="max-w-2xl mx-auto px-4 pt-5 space-y-5">
 
-        {/* 説明カード */}
         <div className="bg-white rounded-2xl p-4 shadow-sm border border-indigo-100">
           <p className="text-sm text-gray-600">
             📖 教材を選んで学習を始めましょう！<br/>
@@ -109,16 +99,14 @@ export default function FlashTopPage() {
           </p>
         </div>
 
-        {/* グラフボタン */}
         <button
-          onClick={() => router.push(`+"`"+`/flash/graph`+"`"+`)}
+          onClick={() => router.push('/flash/graph')}
           className="w-full py-3 bg-white rounded-2xl shadow-sm border border-indigo-100 hover:shadow-md hover:border-indigo-300 transition flex items-center justify-center gap-2 text-indigo-600 font-bold"
         >
           <span className="text-xl">📈</span>
           学習グラフを見る
         </button>
 
-        {/* カテゴリ別教材一覧 */}
         {Object.entries(grouped).map(([category, catSets]) => (
           <div key={category} className="space-y-2">
             <h2 className="font-bold text-gray-700 flex items-center gap-2 px-1">
@@ -129,16 +117,12 @@ export default function FlashTopPage() {
             <div className="space-y-2">
               {catSets.map(s => (
                 <button key={s.id}
-                  onClick={() => router.push(`/flash/study?setId=${s.id}&setName=${encodeURIComponent(s.set_name)}`)}
-                  className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100
-                    hover:shadow-md hover:border-indigo-200 transition-all active:scale-98">
+                  onClick={() => router.push('/flash/study?setId=' + s.id + '&setName=' + encodeURIComponent(s.set_name))}
+                  className="w-full text-left bg-white rounded-2xl p-4 shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-200 transition-all">
                   <div className="flex items-center gap-3">
-                    {/* カラーアイコン */}
-                    <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${getCategoryColor(category)}
-                      flex items-center justify-center flex-shrink-0 shadow`}>
+                    <div className={"w-12 h-12 rounded-xl bg-gradient-to-br " + getCategoryColor(category) + " flex items-center justify-center flex-shrink-0 shadow"}>
                       <span className="text-2xl">{getCategoryIcon(category)}</span>
                     </div>
-                    {/* テキスト */}
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-gray-800 text-sm">{s.set_name}</p>
                       {s.grade && <p className="text-xs text-gray-400 mt-0.5">{s.grade}</p>}
