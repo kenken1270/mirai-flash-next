@@ -1,8 +1,5 @@
 ﻿import { supabase } from './supabase'
 
-// ─────────────────────────────
-// 型定義
-// ─────────────────────────────
 export type UserRow = {
   id: number
   username: string
@@ -56,16 +53,24 @@ export async function loadAllUsers(): Promise<UserRow[]> {
 }
 
 export async function loadUser(username: string): Promise<UserRow | null> {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('username', username)
-    .single()
-  return data ?? null
+    .limit(1)
+  if (error) {
+    console.error('loadUser error:', error)
+    return null
+  }
+  return (data && data.length > 0) ? data[0] : null
 }
 
 export async function saveUserFields(username: string, fields: Partial<UserRow>) {
-  await supabase.from('users').update(fields).eq('username', username)
+  const { error } = await supabase
+    .from('users')
+    .update(fields)
+    .eq('username', username)
+  if (error) console.error('saveUserFields error:', error)
 }
 
 // ─────────────────────────────
@@ -80,7 +85,11 @@ export async function loadNews(): Promise<NewsRow[]> {
 }
 
 export async function insertNews(message: string, createdDate: string, targetUser: string) {
-  await supabase.from('news').insert({ message, created_date: createdDate, target_user: targetUser })
+  await supabase.from('news').insert({
+    message,
+    created_date: createdDate,
+    target_user: targetUser,
+  })
 }
 
 export async function deleteNews(id: number) {
