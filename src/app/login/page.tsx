@@ -1,49 +1,91 @@
-'use client'
+﻿'use client'
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
+  const router = useRouter()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const router = useRouter()
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    setError(null)
-    const email = username.toLowerCase() + '@mirai-juku.internal'
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
+    setError('')
+
+    const email = `${username}@mirai-juku.internal`
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (authError) {
       setError('ユーザー名またはパスワードが違います')
       setLoading(false)
-    } else {
-      router.push('/')
+      return
     }
+
+    router.push('/student')
   }
 
   return (
-    <main style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f4ff' }}>
-      <div style={{ width: 340, padding: 40, background: 'white', borderRadius: 12, boxShadow: '0 4px 24px rgba(0,0,0,0.10)' }}>
-        <h1 style={{ marginBottom: 8, fontSize: 22, textAlign: 'center' }}>🌟 未来塾</h1>
-        <p style={{ marginBottom: 24, color: '#888', textAlign: 'center', fontSize: 14 }}>なまえとパスワードでログイン</p>
-        <form onSubmit={handleLogin}>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 'bold' }}>なまえ</label>
-            <input type='text' placeholder='なまえをいれてね' value={username} onChange={e => setUsername(e.target.value)} required style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 6, fontSize: 16, boxSizing: 'border-box' }} />
-          </div>
-          <div style={{ marginBottom: 20 }}>
-            <label style={{ display: 'block', marginBottom: 6, fontSize: 14, fontWeight: 'bold' }}>パスワード</label>
-            <input type='password' placeholder='パスワードをいれてね' value={password} onChange={e => setPassword(e.target.value)} required style={{ width: '100%', padding: '10px 12px', border: '1px solid #ddd', borderRadius: 6, fontSize: 16, boxSizing: 'border-box' }} />
-          </div>
-          {error && <p style={{ color: '#e53e3e', marginBottom: 16, fontSize: 14, textAlign: 'center' }}>{error}</p>}
-          <button type='submit' disabled={loading} style={{ width: '100%', padding: '12px 0', background: '#4f46e5', color: 'white', border: 'none', borderRadius: 6, fontSize: 16, cursor: 'pointer', fontWeight: 'bold' }}>
-            {loading ? 'ログイン中...' : 'ログイン'}
-          </button>
-        </form>
+    <div className="min-h-screen bg-amber-50 flex items-center justify-center px-4">
+      <div className="w-full max-w-sm">
+        {/* ロゴ・タイトル */}
+        <div className="text-center mb-8">
+          <div className="text-6xl mb-3">📚</div>
+          <h1 className="text-3xl font-bold text-yellow-500">未来塾</h1>
+          <p className="text-gray-500 text-sm mt-1">MIRAI JAPANESE LANGUAGE SCHOOL</p>
+          <p className="text-gray-600 mt-2">楽しく学んで、未来を切り開こう！</p>
+        </div>
+
+        {/* ログインフォーム */}
+        <div className="bg-white rounded-2xl shadow-md p-6">
+          <h2 className="text-xl font-bold text-center text-gray-700 mb-5">🔐 ログイン</h2>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                ユーザー名
+              </label>
+              <input
+                type="text"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                placeholder="例: demokun"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-600 mb-1">
+                パスワード
+              </label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                placeholder="パスワードを入力"
+                className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400"
+                required
+              />
+            </div>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-600 rounded-xl px-4 py-2 text-sm">
+                ❌ {error}
+              </div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-yellow-400 hover:bg-yellow-500 text-white font-bold py-3 rounded-xl transition disabled:opacity-50"
+            >
+              {loading ? '確認中...' : '🚀 ログイン'}
+            </button>
+          </form>
+        </div>
       </div>
-    </main>
+    </div>
   )
 }
