@@ -1,4 +1,4 @@
-﻿import { supabase } from './supabase'
+import { supabase } from './supabase'
 
 export type UserRow = {
   id: number
@@ -143,4 +143,12 @@ export async function deleteEvent(id: number) {
 // ─────────────────────────────
 export function todayStr(): string {
   return new Date().toISOString().split('T')[0]
+}
+export async function loadAllPlans(): Promise<PlanRow[]> {
+  const { data, error } = await supabase
+    .from('plans')
+    .select('*')
+    .order('id', { ascending: true })
+  if (error || !data) return []
+  return data as PlanRow[]
 }
