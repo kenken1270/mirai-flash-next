@@ -33,6 +33,8 @@ export type PlanRow = {
   deadline: string
   month_plan: string
   task_type: string
+  planned_minutes?: number
+  actual_minutes?: number
 }
 
 export type EventRow = {
