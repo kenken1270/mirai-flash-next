@@ -118,13 +118,26 @@ function StudyContent() {
   }, [setId, router])
 
   // 🔊 音声読み上げ関数
-  const speak = useCallback((text: string, category: string) => {
+  const speak = useCallback((text: string, category: string, forceLang?: string) => {
     if (typeof window === "undefined" || !window.speechSynthesis) return
     window.speechSynthesis.cancel()
     const utter = new SpeechSynthesisUtterance(text)
-    if (category?.includes("英語") || category?.includes("English")) {
+    if (forceLang) {
+      utter.lang = forceLang
+    } else if (
+      category?.includes("英") ||
+      category?.includes("English") ||
+      category?.includes("英検") ||
+      category?.includes("TOEIC") ||
+      category?.includes("eiken")
+    ) {
       utter.lang = "en-US"
-    } else if (category?.includes("中国語") || category?.includes("Chinese") || category?.includes("みんなの日本語")) {
+    } else if (
+      category?.includes("中国") ||
+      category?.includes("Chinese") ||
+      category?.includes("中文") ||
+      category?.includes("みんなの日本語")
+    ) {
       utter.lang = "zh-CN"
     } else {
       utter.lang = "ja-JP"
@@ -378,7 +391,7 @@ function StudyContent() {
                     🔊 単語
                   </button>
                   <button
-                    onClick={() => speak(card.meaning, "ja-JP")}
+                    onClick={() => speak(card.meaning, card.category, "ja-JP")}
                     className="px-3 py-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-full text-sm font-bold transition active:scale-95"
                   >
                     🔊 意味
