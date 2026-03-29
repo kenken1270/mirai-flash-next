@@ -1,33 +1,39 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 export default function Home() {
-  const [sets, setSets] = useState<any[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter()
+  const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    async function fetchSets() {
-      const { data, error } = await supabase
-        .from('flashcard_sets')
-        .select('*')
-        .limit(5)
-      if (error) setError(error.message)
-      else setSets(data || [])
+    async function checkUser() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/login')
+      } else {
+        setLoading(false)
+      }
     }
-    fetchSets()
-  }, [])
+    checkUser()
+  }, [router])
+
+  if (loading) return <p style={{ padding: 40 }}>読み込み中...</p>
 
   return (
     <main style={{ padding: 40 }}>
-      <h1>Supabase接続テスト</h1>
-      {error && <p style={{ color: 'red' }}>エラー: {error}</p>}
-      {sets.length === 0 && !error && <p>読み込み中...</p>}
-      <ul>
-        {sets.map((s) => (
-          <li key={s.id}>{s.set_name}</li>
-        ))}
-      </ul>
+      <h1>🌟 未来塾 ホーム</h1>
+      <p>ログイン成功！</p>
+      <button
+        onClick={async () => {
+          await supabase.auth.signOut()
+          router.push('/login')
+        }}
+        style={{ marginTop: 16, padding: '10px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer' }}
+      >
+        ログアウト
+      </button>
     </main>
   )
 }
