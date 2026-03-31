@@ -1,18 +1,14 @@
-﻿'use client'
+'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-type ContentRow = {
-  id: number
-  subject: string
-  content_type: string
-  title: string
-  url: string
-}
+type ContentRow = { id: number; subject: string; content_type: string; title: string; url: string }
+type Book = { id: number; title: string; subtitle: string; cover_emoji: string; category: string }
+type SetInfo = { id: number; book_id: number; lang1_label: string; lang2_label: string; lang1_tts_lang: string; lang2_tts_lang: string }
+type QuizResult = { id: number; score_pct: number; miss_count: number; total_count: number; correct_count: number; taken_at: string; stamp_earned: boolean; book_id: number }
 
 const SUBJECTS = ['国語', '算数', '理科', '社会']
-
 const SUBJECT_CONFIG: Record<string, { icon: string; color: string; bg: string }> = {
   '国語': { icon: '📖', color: 'text-red-600',    bg: 'bg-red-50 border-red-200' },
   '算数': { icon: '🔢', color: 'text-blue-600',   bg: 'bg-blue-50 border-blue-200' },
@@ -20,148 +16,361 @@ const SUBJECT_CONFIG: Record<string, { icon: string; color: string; bg: string }
   '社会': { icon: '🌍', color: 'text-orange-600', bg: 'bg-orange-50 border-orange-200' },
 }
 
-const TAB_ACTIVE: Record<string, string> = {
-  '国語': 'bg-red-500 text-white',
-  '算数': 'bg-blue-500 text-white',
-  '理科': 'bg-green-500 text-white',
-  '社会': 'bg-orange-500 text-white',
+function getLangDisplay(label: string, ttsLang?: string): { icon: string; text: string } {
+  const l = label ?? ''
+  const t = ttsLang ?? ''
+  if (t.startsWith('en') || l.includes('英')) return { icon: '🇬🇧', text: l || '英語' }
+  if (t.startsWith('zh') || l.includes('中')) return { icon: '🇨🇳', text: l || '中国語' }
+  if (t.startsWith('ja') || l.includes('日')) return { icon: '🇯🇵', text: l || '日本語' }
+  if (t.startsWith('ko') || l.includes('韓')) return { icon: '🇰🇷', text: l || '韓国語' }
+  return { icon: '📖', text: l || '問題' }
 }
 
-const TAB_INACTIVE = 'bg-white text-gray-500 border border-gray-200'
+type Strictness = 'strict' | 'normal' | 'loose'
+
+const STRICTNESS_OPTIONS: { key: Strictness; label: string; desc: string; detail: string }[] = [
+  { key: 'strict', label: '🎯 厳密',   desc: 'スペル完全一致', detail: '一字一句正確に入力する必要があります。英単語スペル練習向け。' },
+  { key: 'normal', label: '📝 標準',   desc: '意味が合えばOK', detail: '「見える、見る」なら「見える」だけでも正解。読点区切りのどれか1つでOK。' },
+  { key: 'loose',  label: '😊 ゆるめ', desc: 'ニュアンスOK',   detail: '2文字以上含んでいれば正解。ひらがな・カタカナの揺れも許容します。' },
+]
 
 export default function TestPage() {
   const router = useRouter()
-  const [contents, setContents] = useState<ContentRow[]>([])
-  const [activeTab, setActiveTab] = useState('国語')
-  const [loading, setLoading] = useState(true)
+  const [contents, setContents]         = useState<ContentRow[]>([])
+  const [books, setBooks]               = useState<Book[]>([])
+  const [sets, setSets]                 = useState<SetInfo[]>([])
+  const [quizHistory, setQuizHistory]   = useState<QuizResult[]>([])
+  const [activeTab, setActiveTab]       = useState<string>('単語')
+  const [selectedBook, setSelectedBook] = useState<Book | null>(null)
+  const [itemStart, setItemStart]       = useState<string>('1')
+  const [itemEnd, setItemEnd]           = useState<string>('15')
+  const [quizMode, setQuizMode]         = useState<'choice' | 'typing'>('choice')
+  const [direction, setDirection]       = useState<'lang1to2' | 'lang2to1'>('lang1to2')
+  const [strictness, setStrictness]     = useState<Strictness>('normal')
+  const [loading, setLoading]           = useState(true)
 
   useEffect(() => {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-
-      const { data } = await supabase
-        .from('content')
-        .select('*')
-        .order('id')
-      setContents(data ?? [])
+      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
+      const [{ data: contentData }, { data: bookData }, { data: setData }, { data: historyData }] = await Promise.all([
+        supabase.from('content').select('*').order('id'),
+        supabase.from('flashcard_books').select('*').order('id'),
+        supabase.from('flashcard_sets').select('id, book_id, lang1_label, lang2_label, lang1_tts_lang, lang2_tts_lang').order('id'),
+        supabase.from('quiz_results').select('*').eq('username', uname).order('taken_at', { ascending: false }).limit(20),
+      ])
+      setContents(contentData ?? [])
+      setBooks(bookData ?? [])
+      setSets(setData ?? [])
+      setQuizHistory(historyData ?? [])
+      if ((bookData ?? []).length > 0) setSelectedBook((bookData ?? [])[0])
       setLoading(false)
     }
     init()
   }, [router])
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <div className="text-4xl animate-bounce">✏️</div>
-        <p className="text-gray-400">読み込み中...</p>
-      </div>
-    )
-  }
+  const bookSets     = sets.filter(s => s.book_id === selectedBook?.id)
+  const firstSet     = bookSets[0]
+  const lang1Label   = firstSet?.lang1_label    ?? '問題'
+  const lang2Label   = firstSet?.lang2_label    ?? '答え'
+  const lang1TtsLang = firstSet?.lang1_tts_lang ?? ''
+  const lang2TtsLang = firstSet?.lang2_tts_lang ?? ''
+  const lang1Display = getLangDisplay(lang1Label, lang1TtsLang)
+  const lang2Display = getLangDisplay(lang2Label, lang2TtsLang)
 
-  const tabContents = contents.filter(c => c.subject === activeTab)
-  const videos = tabContents.filter(c => c.content_type === '動画')
-  const tests  = tabContents.filter(c => c.content_type === '小テスト')
-  const cfg = SUBJECT_CONFIG[activeTab]
+  if (loading) return (
+    <div className="flex flex-col items-center justify-center py-20 gap-3">
+      <div className="text-4xl animate-bounce">✏️</div>
+      <p className="text-gray-400">読み込み中...</p>
+    </div>
+  )
+
+  const TABS          = ['単語', ...SUBJECTS]
+  const totalTests    = quizHistory.length
+  const stampCount    = quizHistory.filter(r => r.stamp_earned).length
+  const avgScore      = totalTests > 0 ? Math.round(quizHistory.reduce((s, r) => s + r.score_pct, 0) / totalTests) : 0
+  const totalAnswered = quizHistory.reduce((s, r) => s + r.total_count, 0)
+  const recentScores  = [...quizHistory].reverse().slice(-8)
+  const QUICK_RANGES  = [[1,15],[1,30],[1,50],[1,100]]
+  const startNum      = parseInt(itemStart) || 1
+  const endNum        = parseInt(itemEnd)   || startNum
+  const questionCount = Math.max(0, endNum - startNum + 1)
+
+  function handleStart() {
+    if (!selectedBook) return
+    const params = new URLSearchParams({
+      book_id:     String(selectedBook.id),
+      item_start:  String(startNum),
+      item_end:    String(endNum),
+      mode:        quizMode,
+      direction,
+      lang1_label: lang1Label,
+      lang2_label: lang2Label,
+      lang1_tts:   lang1TtsLang,
+      lang2_tts:   lang2TtsLang,
+      strictness,
+    })
+    router.push('/flash/quiz?' + params.toString())
+  }
 
   return (
     <div className="space-y-4">
-
       {/* ヘッダー */}
-      <div className={`rounded-2xl p-5 shadow-md border ${cfg.bg}`}>
-        <h2 className={`text-xl font-bold ${cfg.color}`}>
-          {cfg.icon} 小テスト・動画
-        </h2>
-        <p className="text-sm text-gray-500 mt-1">
-          教科を選んで動画を見たり小テストに挑戦しよう！
-        </p>
+      <div className="bg-gradient-to-r from-purple-500 to-indigo-600 rounded-2xl p-5 shadow-md text-white">
+        <h2 className="text-xl font-bold">✏️ 小テスト</h2>
+        <p className="text-sm opacity-80 mt-1">単語・教科の小テストに挑戦しよう！</p>
       </div>
 
-      {/* 教科タブ */}
-      <div className="grid grid-cols-4 gap-2">
-        {SUBJECTS.map(subject => (
-          <button
-            key={subject}
-            onClick={() => setActiveTab(subject)}
-            className={`py-2 rounded-xl text-sm font-bold transition-all shadow-sm
-              ${activeTab === subject ? TAB_ACTIVE[subject] : TAB_INACTIVE}`}
-          >
-            {SUBJECT_CONFIG[subject].icon}<br />
-            <span className="text-xs">{subject}</span>
+      {/* タブ */}
+      <div className="flex gap-2 overflow-x-auto pb-1">
+        {TABS.map(tab => (
+          <button key={tab} onClick={() => setActiveTab(tab)}
+            className={`flex-shrink-0 px-4 py-2 rounded-xl text-sm font-bold border transition
+              ${activeTab === tab ? 'bg-purple-500 text-white border-purple-500' : 'bg-white text-gray-600 border-gray-200'}`}>
+            {tab === '単語' ? '🃏 単語' : SUBJECT_CONFIG[tab].icon + ' ' + tab}
           </button>
         ))}
       </div>
 
-      {/* コンテンツなし */}
-      {tabContents.length === 0 && (
-        <div className="bg-gray-50 border border-gray-200 rounded-2xl p-8 text-center space-y-2">
-          <div className="text-4xl">{cfg.icon}</div>
-          <p className="font-bold text-gray-600">{activeTab}のコンテンツはまだありません</p>
-          <p className="text-sm text-gray-400">先生が追加すると<br />ここに表示されます</p>
-        </div>
-      )}
+      {/* ===== 単語タブ ===== */}
+      {activeTab === '単語' && (
+        <div className="space-y-3">
 
-      {/* 動画セクション */}
-      {videos.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="font-bold text-gray-700 flex items-center gap-2">
-            <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-lg text-sm">🎬 動画</span>
-            <span className="text-sm text-gray-400">{videos.length}件</span>
-          </h3>
-          <div className="space-y-2">
-            {videos.map(item => (
-              <a
-                key={item.id}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`flex items-center gap-3 p-4 rounded-xl border shadow-sm
-                  hover:shadow-md transition-all active:scale-95 ${cfg.bg}`}
-              >
-                <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow">
-                  <span className="text-white text-lg">▶</span>
+          {/* 累計統計 */}
+          {totalTests > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-3">
+              <h3 className="font-bold text-gray-700 text-sm">🏅 あなたの記録</h3>
+              <div className="grid grid-cols-4 gap-2 text-center">
+                {[
+                  { label: 'テスト', value: totalTests,    unit: '回', color: 'text-purple-500' },
+                  { label: 'スタンプ', value: stampCount,  unit: '回', color: 'text-yellow-500' },
+                  { label: '正解率', value: avgScore,      unit: '%',  color: 'text-green-500'  },
+                  { label: '累計問', value: totalAnswered, unit: '問', color: 'text-blue-500'   },
+                ].map(({ label, value, unit, color }) => (
+                  <div key={label} className="bg-gray-50 rounded-xl p-2">
+                    <p className={`text-lg font-black ${color}`}>{value.toLocaleString()}<span className="text-xs">{unit}</span></p>
+                    <p className="text-gray-400 text-xs mt-0.5">{label}</p>
+                  </div>
+                ))}
+              </div>
+              {recentScores.length > 1 && (
+                <div>
+                  <p className="text-xs text-gray-400 mb-1">📈 最近の正解率</p>
+                  <div className="flex items-end gap-1 h-12">
+                    {recentScores.map((r, i) => (
+                      <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                        <div className="w-full rounded-t transition-all"
+                          style={{
+                            height: `${Math.round((r.score_pct / 100) * 44)}px`,
+                            background: r.stamp_earned
+                              ? 'linear-gradient(to top,#f59e0b,#fbbf24)'
+                              : 'linear-gradient(to top,#6366f1,#a5b4fc)'
+                          }} />
+                        <span className="text-xs">{r.stamp_earned ? '⭐' : '　'}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <p className={`font-bold text-sm ${cfg.color}`}>{item.title}</p>
-                  <p className="text-xs text-gray-400 truncate mt-0.5">{item.url}</p>
+              )}
+            </div>
+          )}
+
+          {/* 設定カード */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 space-y-4">
+
+            {/* ① 教材選択 */}
+            <div>
+              <p className="text-sm font-bold text-gray-600 mb-2">📚 教材</p>
+              <div className="space-y-2">
+                {books.map(book => {
+                  const s = sets.find(s => s.book_id === book.id)
+                  const d1 = getLangDisplay(s?.lang1_label ?? '', s?.lang1_tts_lang ?? '')
+                  const d2 = getLangDisplay(s?.lang2_label ?? '', s?.lang2_tts_lang ?? '')
+                  return (
+                    <button key={book.id}
+                      onClick={() => { setSelectedBook(book); setItemStart('1'); setItemEnd('15'); setDirection('lang1to2') }}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border transition text-left
+                        ${selectedBook?.id === book.id ? 'bg-purple-50 border-purple-400' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}>
+                      <span className="text-2xl">{book.cover_emoji}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm text-gray-800 truncate">{book.title}</p>
+                        <p className="text-xs text-gray-400">{book.subtitle}</p>
+                      </div>
+                      <span className="text-xs text-gray-400 flex-shrink-0">{d1.icon}{d1.text} / {d2.icon}{d2.text}</span>
+                      {selectedBook?.id === book.id && <span className="text-purple-500 font-bold text-lg flex-shrink-0 ml-1">✓</span>}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ② 出題範囲 */}
+            <div>
+              <p className="text-sm font-bold text-gray-600 mb-2">🎯 出題範囲（単語番号）</p>
+              <div className="flex items-center gap-2 mb-2">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={itemStart}
+                  onChange={e => setItemStart(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-sm focus:border-purple-400 outline-none" />
+                <span className="text-gray-400 font-bold">〜</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={itemEnd}
+                  onChange={e => setItemEnd(e.target.value.replace(/[^0-9]/g, ''))}
+                  className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-sm focus:border-purple-400 outline-none" />
+                <span className="text-gray-500 text-sm">番</span>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {QUICK_RANGES.map(([s, e]) => (
+                  <button key={`${s}-${e}`}
+                    onClick={() => { setItemStart(String(s)); setItemEnd(String(e)) }}
+                    className={`text-xs px-3 py-1.5 rounded-full border font-bold transition
+                      ${startNum === s && endNum === e ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                    {s}〜{e}番
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ③ 出題方向 */}
+            <div>
+              <p className="text-sm font-bold text-gray-600 mb-2">🔄 出題方向</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['lang1to2', 'lang2to1'] as const).map(d => (
+                  <button key={d} onClick={() => setDirection(d)}
+                    className={`py-2.5 rounded-xl text-sm font-bold border transition
+                      ${direction === d ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                    {d === 'lang1to2'
+                      ? `${lang1Display.icon} ${lang1Display.text} → ${lang2Display.icon} ${lang2Display.text}`
+                      : `${lang2Display.icon} ${lang2Display.text} → ${lang1Display.icon} ${lang1Display.text}`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ④ 出題形式 */}
+            <div>
+              <p className="text-sm font-bold text-gray-600 mb-2">🎮 出題形式</p>
+              <div className="grid grid-cols-2 gap-2">
+                {(['choice', 'typing'] as const).map(m => (
+                  <button key={m} onClick={() => setQuizMode(m)}
+                    className={`py-2.5 rounded-xl text-sm font-bold border transition
+                      ${quizMode === m ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                    {m === 'choice' ? '🔤 4択' : '⌨️ 入力'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* ⑤ 判定レベル（入力モード時のみ） */}
+            {quizMode === 'typing' && (
+              <>
+                <div className="border-t border-gray-100" />
+                <div>
+                  <p className="text-sm font-bold text-gray-600 mb-2">⚖️ 判定レベル</p>
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    {STRICTNESS_OPTIONS.map(({ key, label, desc }) => (
+                      <button key={key} onClick={() => setStrictness(key)}
+                        className={`py-2 px-1 rounded-xl text-xs font-bold border transition flex flex-col items-center gap-0.5
+                          ${strictness === key ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                        <span>{label}</span>
+                        <span className={`text-xs ${strictness === key ? 'opacity-80' : 'text-gray-400'}`}>{desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-2">
+                    <p className="text-xs text-blue-700">
+                      {STRICTNESS_OPTIONS.find(o => o.key === strictness)?.detail}
+                    </p>
+                  </div>
                 </div>
-                <span className="text-gray-300 flex-shrink-0">›</span>
-              </a>
-            ))}
+              </>
+            )}
+
+            {/* スタンプ条件 */}
+            <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3 text-center">
+              <p className="text-xs text-yellow-700 font-bold">🏆 ミス3以内で先生スタンプGET！</p>
+            </div>
+
+            {/* テスト開始ボタン */}
+            <button onClick={handleStart} disabled={!selectedBook}
+              className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-4 rounded-2xl font-bold text-lg shadow-md hover:opacity-90 transition disabled:opacity-40">
+              🚀 テスト開始！（{questionCount}問）
+            </button>
           </div>
         </div>
       )}
 
-      {/* 小テストセクション */}
-      {tests.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="font-bold text-gray-700 flex items-center gap-2">
-            <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-lg text-sm">✏️ 小テスト</span>
-            <span className="text-sm text-gray-400">{tests.length}件</span>
-          </h3>
-          <div className="space-y-2">
-            {tests.map(item => (
-              <a
-                key={item.id}
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-3 p-4 rounded-xl border border-purple-200 bg-purple-50 shadow-sm hover:shadow-md transition-all active:scale-95"
-              >
-                <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow">
-                  <span className="text-white text-lg">✏️</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold text-sm text-purple-700">{item.title}</p>
-                  <p className="text-xs text-gray-400 truncate mt-0.5">{item.url}</p>
-                </div>
-                <span className="text-gray-300 flex-shrink-0">›</span>
-              </a>
-            ))}
+      {/* ===== 教科タブ ===== */}
+      {SUBJECTS.includes(activeTab) && (() => {
+        const tabContents = contents.filter(c => c.subject === activeTab)
+        const videos = tabContents.filter(c => c.content_type === '動画')
+        const tests  = tabContents.filter(c => c.content_type === '小テスト')
+        const cfg = SUBJECT_CONFIG[activeTab]
+        return (
+          <div className="space-y-4">
+            {tabContents.length === 0 && (
+              <div className="bg-gray-50 border border-gray-200 rounded-2xl p-8 text-center space-y-2">
+                <div className="text-4xl">{cfg.icon}</div>
+                <p className="font-bold text-gray-600">{activeTab}のコンテンツはまだありません</p>
+                <p className="text-sm text-gray-400">先生が追加するとここに表示されます</p>
+              </div>
+            )}
+            {videos.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                  <span className="bg-red-100 text-red-600 px-2 py-0.5 rounded-lg text-sm">🎬 動画</span>
+                  <span className="text-sm text-gray-400">{videos.length}件</span>
+                </h3>
+                {videos.map(item => (
+                  <a key={item.id} href={item.url} target="_blank" rel="noopener noreferrer"
+                    className={`flex items-center gap-3 p-4 rounded-xl border shadow-sm hover:shadow-md transition-all active:scale-95 ${cfg.bg}`}>
+                    <div className="w-10 h-10 bg-red-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow">
+                      <span className="text-white text-lg">▶</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-bold text-sm ${cfg.color}`}>{item.title}</p>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{item.url}</p>
+                    </div>
+                    <span className="text-gray-300 flex-shrink-0">›</span>
+                  </a>
+                ))}
+              </div>
+            )}
+            {tests.length > 0 && (
+              <div className="space-y-2">
+                <h3 className="font-bold text-gray-700 flex items-center gap-2">
+                  <span className="bg-purple-100 text-purple-600 px-2 py-0.5 rounded-lg text-sm">✏️ 小テスト</span>
+                  <span className="text-sm text-gray-400">{tests.length}件</span>
+                </h3>
+                {tests.map(item => (
+                  <a key={item.id} href={item.url} target="_blank" rel="noopener noreferrer"
+                    className="flex items-center gap-3 p-4 rounded-xl border border-purple-200 bg-purple-50 shadow-sm hover:shadow-md transition-all active:scale-95">
+                    <div className="w-10 h-10 bg-purple-500 rounded-xl flex items-center justify-center flex-shrink-0 shadow">
+                      <span className="text-white text-lg">✏️</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-sm text-purple-700">{item.title}</p>
+                      <p className="text-xs text-gray-400 truncate mt-0.5">{item.url}</p>
+                    </div>
+                    <span className="text-gray-300 flex-shrink-0">›</span>
+                  </a>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
-
+        )
+      })()}
     </div>
   )
 }
