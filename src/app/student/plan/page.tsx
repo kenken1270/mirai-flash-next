@@ -4,7 +4,6 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { loadUser, loadPlans, insertPlan, updatePlan, saveUserFields, todayStr, type UserRow, type PlanRow } from '@/lib/student'
 
-/* ─── ユーティリティ ─── */
 function getWeekDates(center: string): string[] {
   const dates: string[] = []
   const base = new Date(center + 'T00:00:00')
@@ -25,11 +24,10 @@ function pctColor(pct: number) {
   if (pct > 0)   return 'bg-yellow-400'
   return 'bg-gray-200'
 }
-
 const TASK_TYPES = [
   { value: 'reading',  label: '📖 読む' },
   { value: 'writing',  label: '✏️ 書く' },
-  { value: 'video',    label: '🎥 動画' },
+  { value: 'video',    label: '🎬 動画' },
   { value: 'exercise', label: '💪 練習' },
   { value: 'review',   label: '🔁 復習' },
   { value: 'other',    label: '📌 その他' },
@@ -38,28 +36,42 @@ function taskIcon(type: string) {
   return TASK_TYPES.find(t => t.value === type)?.label.split(' ')[0] ?? '📌'
 }
 
-/* ─── メインコンポーネント ─── */
+const DAY_LABELS = ['日','月','火','水','木','金','土']
+
 type View = 'big' | 'mid' | 'small'
+type WizStep = 1 | 2 | 3
 
 export default function PlanPage() {
   const router = useRouter()
-  const [username, setUsername]           = useState('')
-  const [user, setUser]                   = useState<UserRow | null>(null)
-  const [plans, setPlans]                 = useState<PlanRow[]>([])
-  const [loading, setLoading]             = useState(true)
-  const [toast, setToast]                 = useState('')
+  const [username, setUsername] = useState('')
+  const [user, setUser]         = useState<UserRow | null>(null)
+  const [plans, setPlans]       = useState<PlanRow[]>([])
+  const [loading, setLoading]   = useState(true)
+  const [toast, setToast]       = useState('')
 
-  /* ドリルダウン状態 */
-  const [view, setView]                   = useState<View>('big')
-  const [selectedBig, setSelectedBig]     = useState<string | null>(null)
-  const [selectedMid, setSelectedMid]     = useState<string | null>(null)
-  const [selectedDate, setSelectedDate]   = useState(todayStr())
+  const [view, setView]               = useState<View>('big')
+  const [selectedBig, setSelectedBig] = useState<string | null>(null)
+  const [selectedMid, setSelectedMid] = useState<string | null>(null)
+  const [selectedDate, setSelectedDate] = useState(todayStr())
 
-  /* 追加モーダル */
-  const [showAdd, setShowAdd]             = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
   const [newTask, setNewTask] = useState({
     task_name: '', big_plan: '', mid_plan: '',
     task_type: 'reading', planned_minutes: 30,
+  })
+
+  // ウィザード用
+  const [showWizard, setShowWizard] = useState(false)
+  const [wizStep, setWizStep]       = useState<WizStep>(1)
+  const [wizData, setWizData]       = useState({
+    big_plan: '',
+    deadline: '',
+    mid_plan: '',
+    month_plan: '',
+    task_name: '',
+    task_date: todayStr(),
+    task_type: 'reading',
+    planned_minutes: 30,
   })
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
@@ -76,34 +88,29 @@ export default function PlanPage() {
     init()
   }, [router])
 
-  /* ─── 集計 ─── */
   const bigGroups = plans.reduce<Record<string, PlanRow[]>>((acc, p) => {
     const k = p.big_plan || '未分類'; if (!acc[k]) acc[k] = []; acc[k].push(p); return acc
   }, {})
-
-  const midPlans = selectedBig ? plans.filter(p => p.big_plan === selectedBig) : []
+  const midPlans  = selectedBig ? plans.filter(p => p.big_plan === selectedBig) : []
   const midGroups = midPlans.reduce<Record<string, PlanRow[]>>((acc, p) => {
     const k = p.mid_plan || '未分類'; if (!acc[k]) acc[k] = []; acc[k].push(p); return acc
   }, {})
-  const months = getMonthRange(midPlans)
-
+  const months    = getMonthRange(midPlans)
   const smallPlans = selectedMid
     ? plans.filter(p => p.big_plan === selectedBig && p.mid_plan === selectedMid)
     : plans
   const weekDates = getWeekDates(selectedDate)
   const dayTasks  = smallPlans.filter(p => (p.task_date ?? '').slice(0, 10) === selectedDate)
+  const totalAll  = plans.length
+  const doneAll   = plans.filter(p => p.is_done === 1).length
+  const pctAll    = totalAll > 0 ? Math.round(doneAll / totalAll * 100) : 0
 
-  const totalAll = plans.length
-  const doneAll  = plans.filter(p => p.is_done === 1).length
-  const pctAll   = totalAll > 0 ? Math.round(doneAll / totalAll * 100) : 0
-
-  /* ─── アクション ─── */
   async function toggleDone(task: PlanRow) {
     const nd = task.is_done === 1 ? 0 : 1
     setPlans(prev => prev.map(p => p.id === task.id ? { ...p, is_done: nd } : p))
     await updatePlan(task.id, { is_done: nd })
     if (nd === 1 && user) {
-      showToast('🎉 完了！ +10 EXP')
+      showToast('🎉 完了！+10 EXP')
       await saveUserFields(username, { current_points: (user.current_points ?? 0) + 10 })
       setUser(prev => prev ? { ...prev, current_points: (prev.current_points ?? 0) + 10 } : prev)
     }
@@ -132,13 +139,42 @@ export default function PlanPage() {
     setPlans(updated)
     setNewTask({ task_name: '', big_plan: '', mid_plan: '', task_type: 'reading', planned_minutes: 30 })
     setShowAdd(false)
-    showToast('✅ タスク追加！ +5 EXP')
+    showToast('✅ タスク追加！+5 EXP')
     if (user) await saveUserFields(username, { current_points: (user.current_points ?? 0) + 5 })
   }
 
+  async function completeWizard() {
+    if (!wizData.big_plan.trim() || !wizData.task_name.trim()) {
+      showToast('ゴールと最初のタスクを入力してください')
+      return
+    }
+    await insertPlan({
+      username,
+      big_plan:        wizData.big_plan,
+      mid_plan:        wizData.mid_plan  || '今月のタスク',
+      task_name:       wizData.task_name,
+      task_date:       wizData.task_date,
+      is_done:         0,
+      video_url:       '',
+      task_type:       wizData.task_type,
+      planned_minutes: wizData.planned_minutes,
+      material_id:     '',
+      page_range:      '',
+      deadline:        wizData.deadline,
+      month_plan:      wizData.month_plan,
+    })
+    const updated = await loadPlans(username)
+    setPlans(updated)
+    setShowWizard(false)
+    setWizStep(1)
+    setWizData({ big_plan: '', deadline: '', mid_plan: '', month_plan: '', task_name: '', task_date: todayStr(), task_type: 'reading', planned_minutes: 30 })
+    showToast('🏆 新しい計画を作成しました！+20 EXP')
+    if (user) await saveUserFields(username, { current_points: (user.current_points ?? 0) + 20 })
+  }
+
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-blue-50 to-indigo-50">
-      <div className="text-center"><div className="text-5xl mb-4 animate-bounce">📅</div><p className="text-gray-500">読み込み中...</p></div>
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="text-center"><div className="text-5xl mb-4 animate-bounce">📚</div><p className="text-gray-500">読み込み中...</p></div>
     </div>
   )
 
@@ -148,15 +184,17 @@ export default function PlanPage() {
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-green-500 text-white px-6 py-3 rounded-full shadow-lg font-bold animate-bounce">{toast}</div>
       )}
 
-      {/* ── ヘッダー ── */}
-      <div className="bg-gradient-to-r from-indigo-600 to-blue-500 text-white px-4 pt-10 pb-5 shadow-lg">
+      {/* ヘッダー */}
+      <div className="bg-gradient-to-r from-indigo-600 to-blue-500 text-white px-4 pt-6 pb-5 shadow-lg">
         <div className="flex justify-between items-center mb-3">
           <div>
-            <h1 className="text-xl font-bold">📅 学習プラン</h1>
+            <h1 className="text-xl font-bold">🗺️ 学習プラン</h1>
             <p className="text-blue-200 text-xs">{username}</p>
           </div>
-          <button onClick={() => router.push('/student')}
-            className="bg-white/20 px-3 py-1 rounded-full text-sm hover:bg-white/30 transition">← ホーム</button>
+          <button onClick={() => { setShowWizard(true); setWizStep(1) }}
+            className="bg-yellow-400 text-yellow-900 font-bold px-3 py-1.5 rounded-full text-sm shadow hover:bg-yellow-300 transition active:scale-95">
+            ＋ 新しい計画
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex-1 bg-white/20 rounded-full h-2.5">
@@ -167,324 +205,405 @@ export default function PlanPage() {
         <p className="text-center text-yellow-200 text-xs mt-1">⭐ {user?.current_points ?? 0} EXP</p>
       </div>
 
-      {/* ── パンくずナビ ── */}
-      <div className="flex items-center gap-1 px-4 py-2 text-sm bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm">
+      {/* パンくずナビ */}
+      <div className="flex items-center gap-1 px-4 py-2 text-sm bg-white border-b border-gray-100 sticky top-0 z-10 shadow-sm overflow-x-auto">
         <button onClick={() => { setView('big'); setSelectedBig(null); setSelectedMid(null) }}
-          className={`px-2 py-0.5 rounded-lg transition ${view === 'big' ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-400 hover:text-gray-600'}`}>
-          🎯 大計画
+          className={`px-2 py-0.5 rounded-lg whitespace-nowrap transition ${view === 'big' ? 'bg-indigo-100 text-indigo-700 font-bold' : 'text-gray-400 hover:text-gray-600'}`}>
+          🏆 大計画
         </button>
         {selectedBig && <>
           <span className="text-gray-300">›</span>
           <button onClick={() => { setView('mid'); setSelectedMid(null) }}
-            className={`px-2 py-0.5 rounded-lg transition truncate max-w-[120px] ${view === 'mid' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-gray-400 hover:text-gray-600'}`}>
-            📆 {selectedBig.length > 10 ? selectedBig.slice(0, 10) + '…' : selectedBig}
+            className={`px-2 py-0.5 rounded-lg truncate max-w-[120px] whitespace-nowrap transition ${view === 'mid' ? 'bg-blue-100 text-blue-700 font-bold' : 'text-gray-400 hover:text-gray-600'}`}>
+            📅 {selectedBig.length > 10 ? selectedBig.slice(0, 10) + '…' : selectedBig}
           </button>
         </>}
         {selectedMid && <>
           <span className="text-gray-300">›</span>
-          <span className="px-2 py-0.5 rounded-lg bg-green-100 text-green-700 font-bold truncate max-w-[100px]">
+          <button onClick={() => setView('small')}
+            className={`px-2 py-0.5 rounded-lg truncate max-w-[100px] whitespace-nowrap transition ${view === 'small' ? 'bg-green-100 text-green-700 font-bold' : 'text-gray-400 hover:text-gray-600'}`}>
             📝 {selectedMid.length > 8 ? selectedMid.slice(0, 8) + '…' : selectedMid}
-          </span>
+          </button>
         </>}
       </div>
 
-      {/* ══════════════════════════════
-          🎯 大計画ビュー
-      ══════════════════════════════ */}
-      {view === 'big' && (
-        <div className="px-4 mt-4 space-y-4">
-          <p className="text-xs text-gray-400 text-center">目標をタップすると月別の詳細が見られます</p>
-          {Object.entries(bigGroups).map(([bigPlan, tasks]) => {
-            const done  = tasks.filter(t => t.is_done === 1).length
-            const total = tasks.length
-            const pct   = total > 0 ? Math.round(done / total * 100) : 0
-            const mids  = [...new Set(tasks.map(t => t.mid_plan).filter(Boolean))]
-            const ms    = getMonthRange(tasks)
-            return (
-              <button key={bigPlan} onClick={() => { setSelectedBig(bigPlan); setView('mid') }}
-                className="w-full text-left bg-white rounded-2xl p-5 shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-200 transition active:scale-98">
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center text-2xl flex-shrink-0">🎯</div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-gray-800 leading-tight">{bigPlan}</h3>
-                    <p className="text-xs text-gray-400 mt-0.5">{mids.length}テーマ • {ms.length > 0 ? `${ms[0]}〜${ms[ms.length-1]}` : '日程未設定'}</p>
+      <div className="px-4 pt-4 space-y-3">
+
+        {/* ══ 大計画ビュー ══ */}
+        {view === 'big' && (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">🎯 ゴールをタップして中計画へ</p>
+            {Object.entries(bigGroups).map(([big, tasks]) => {
+              const done = tasks.filter(t => t.is_done === 1).length
+              const pct  = Math.round(done / tasks.length * 100)
+              return (
+                <button key={big} onClick={() => { setSelectedBig(big); setView('mid') }}
+                  className="w-full bg-white rounded-2xl p-4 shadow-sm border border-gray-100 text-left hover:shadow-md transition active:scale-95">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-bold text-gray-800 text-sm leading-snug flex-1 pr-2">{big}</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full text-white ${pctColor(pct)}`}>{pct}%</span>
                   </div>
-                  <div className="text-right flex-shrink-0">
-                    <div className={`text-2xl font-bold ${pct >= 80 ? 'text-green-500' : 'text-indigo-500'}`}>{pct}%</div>
-                    <div className="text-xs text-gray-400">{done}/{total}</div>
+                  <div className="w-full bg-gray-100 rounded-full h-2 mb-1">
+                    <div className={`h-2 rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${pct}%` }} />
                   </div>
-                </div>
-                <div className="w-full bg-gray-100 rounded-full h-3 mb-3">
-                  <div className={`${pctColor(pct)} h-3 rounded-full transition-all`} style={{ width: `${pct}%` }} />
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {mids.slice(0, 4).map(m => (
-                    <span key={m} className="text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full border border-indigo-100 truncate max-w-[120px]">{m}</span>
-                  ))}
-                  {mids.length > 4 && <span className="text-xs text-gray-400">+{mids.length - 4}件</span>}
-                </div>
-                <p className="text-xs text-indigo-400 mt-3 text-right">タップして詳細を見る →</p>
-              </button>
-            )
-          })}
-          {Object.keys(bigGroups).length === 0 && (
-            <div className="text-center py-16 text-gray-400">
-              <div className="text-5xl mb-3">🎯</div>
-              <p className="font-bold">まだ計画がありません</p>
-              <p className="text-xs mt-1">小計画タブからタスクを追加してください</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ══════════════════════════════
-          📆 中計画ビュー（月別ガントチャート）
-      ══════════════════════════════ */}
-      {view === 'mid' && selectedBig && (
-        <div className="mt-4">
-          <div className="px-4 mb-3">
-            <h2 className="font-bold text-gray-700 text-sm">📆 月別進捗マップ</h2>
-            <p className="text-xs text-gray-400">教材・テーマをタップすると日別タスクが見られます</p>
-          </div>
-
-          {/* ガントチャート表 */}
-          <div className="overflow-x-auto px-4">
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden" style={{ minWidth: `${180 + months.length * 80}px` }}>
-              {/* ヘッダー行 */}
-              <div className="flex border-b border-gray-100 bg-gray-50">
-                <div className="w-44 flex-shrink-0 px-3 py-2 text-xs font-bold text-gray-500">教材 / テーマ</div>
-                {months.map(m => (
-                  <div key={m} className="w-20 flex-shrink-0 text-center px-1 py-2 text-xs font-bold text-gray-500">
-                    {m.slice(5)}月
+                  <div className="flex justify-between text-xs text-gray-400">
+                    <span>{done}/{tasks.length} 完了</span>
+                    <span>タップで詳細 ›</span>
                   </div>
-                ))}
-                <div className="w-16 flex-shrink-0 text-center px-1 py-2 text-xs font-bold text-gray-500">合計</div>
-              </div>
-
-              {/* データ行 */}
-              {Object.entries(midGroups).map(([midPlan, tasks]) => {
-                const totalMid = tasks.length
-                const doneMid  = tasks.filter(t => t.is_done === 1).length
-                const pctMid   = totalMid > 0 ? Math.round(doneMid / totalMid * 100) : 0
-                return (
-                  <button key={midPlan} onClick={() => { setSelectedMid(midPlan); setView('small') }}
-                    className="w-full flex border-b border-gray-50 hover:bg-indigo-50 transition text-left items-center">
-                    {/* テーマ名 */}
-                    <div className="w-44 flex-shrink-0 px-3 py-3">
-                      <p className="text-xs font-bold text-gray-700 leading-tight line-clamp-2">{midPlan || '（未分類）'}</p>
-                    </div>
-                    {/* 月別セル */}
-                    {months.map(m => {
-                      const mTasks = tasks.filter(t => (t.task_date ?? '').slice(0, 7) === m)
-                      const mDone  = mTasks.filter(t => t.is_done === 1).length
-                      const mTotal = mTasks.length
-                      const mPct   = mTotal > 0 ? Math.round(mDone / mTotal * 100) : 0
-                      return (
-                        <div key={m} className="w-20 flex-shrink-0 px-2 py-3 flex flex-col items-center gap-1">
-                          {mTotal > 0 ? (
-                            <>
-                              <div className="w-full bg-gray-100 rounded-full h-2">
-                                <div className={`${pctColor(mPct)} h-2 rounded-full`} style={{ width: `${mPct}%` }} />
-                              </div>
-                              <span className="text-xs text-gray-500">{mDone}/{mTotal}</span>
-                            </>
-                          ) : (
-                            <span className="text-gray-200 text-lg">—</span>
-                          )}
-                        </div>
-                      )
-                    })}
-                    {/* 合計 */}
-                    <div className="w-16 flex-shrink-0 px-2 py-3 flex flex-col items-center">
-                      <div className={`text-sm font-bold ${pctMid >= 80 ? 'text-green-500' : 'text-indigo-500'}`}>{pctMid}%</div>
-                      <div className="text-xs text-gray-400">{doneMid}/{totalMid}</div>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 凡例 */}
-          <div className="flex gap-3 justify-center mt-3 px-4">
-            {[['bg-green-400','80%以上'],['bg-blue-400','50〜79%'],['bg-yellow-400','1〜49%'],['bg-gray-200','0%']].map(([c,l]) => (
-              <div key={l} className="flex items-center gap-1">
-                <div className={`w-3 h-3 rounded-full ${c}`} />
-                <span className="text-xs text-gray-400">{l}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ══════════════════════════════
-          📝 小計画ビュー（週カレンダー）
-      ══════════════════════════════ */}
-      {view === 'small' && (
-        <div>
-          {selectedMid && (
-            <div className="mx-4 mt-4 bg-indigo-50 border border-indigo-200 rounded-2xl px-4 py-2 flex items-center justify-between">
-              <div>
-                <p className="text-xs text-indigo-400">表示中のテーマ</p>
-                <p className="font-bold text-indigo-700 text-sm">{selectedMid}</p>
-              </div>
-              <button onClick={() => setSelectedMid(null)}
-                className="text-xs text-indigo-400 hover:text-indigo-600 border border-indigo-300 rounded-lg px-2 py-1">全て表示</button>
-            </div>
-          )}
-
-          {/* 週カレンダー */}
-          <div className="px-4 mt-3 overflow-x-auto">
-            <div className="flex gap-2 min-w-max pb-1">
-              {weekDates.map(date => {
-                const cnt  = smallPlans.filter(p => (p.task_date ?? '').slice(0,10) === date).length
-                const done = smallPlans.filter(p => (p.task_date ?? '').slice(0,10) === date && p.is_done===1).length
-                const isToday = date === todayStr()
-                const isSel   = date === selectedDate
-                const [,mm,dd] = date.split('-')
-                const dow = ['日','月','火','水','木','金','土'][new Date(date+'T00:00:00').getDay()]
-                return (
-                  <button key={date} onClick={() => setSelectedDate(date)}
-                    className={`flex flex-col items-center px-3 py-2 rounded-2xl min-w-[52px] transition border-2 ${
-                      isSel   ? 'bg-indigo-500 text-white border-indigo-600 shadow-md scale-105' :
-                      isToday ? 'bg-yellow-100 border-yellow-400 text-yellow-700' :
-                                'bg-white border-gray-200 text-gray-600'
-                    }`}>
-                    <span className={`text-xs ${isSel ? 'text-indigo-200' : 'text-gray-400'}`}>{dow}</span>
-                    <span className="text-sm font-bold">{dd}</span>
-                    <span className="text-xs">{mm}/{dd}</span>
-                    {cnt > 0 && (
-                      <span className={`text-xs font-bold mt-0.5 ${done===cnt ? 'text-green-400' : isSel ? 'text-white' : 'text-indigo-500'}`}>
-                        {done}/{cnt}
-                      </span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* 日付サマリー */}
-          <div className="px-4 mt-2">
-            <div className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 flex items-center justify-between">
-              <h2 className="font-bold text-gray-700 text-sm">
-                {selectedDate === todayStr() ? '📌 今日' : `📅 ${selectedDate.slice(5).replace('-','/')}`}
-                　{dayTasks.length > 0 && <span className="text-gray-400 font-normal text-xs">{dayTasks.filter(t=>t.is_done===1).length}/{dayTasks.length} 完了</span>}
-              </h2>
-              {dayTasks.length > 0 && (
-                <div className="w-24 bg-gray-200 rounded-full h-2">
-                  <div className="bg-indigo-400 h-2 rounded-full transition-all"
-                    style={{ width: `${Math.round(dayTasks.filter(t=>t.is_done===1).length/dayTasks.length*100)}%` }} />
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* タスクカード */}
-          <div className="px-4 mt-2 space-y-2">
-            {dayTasks.length === 0 && (
-              <div className="text-center py-10 text-gray-400">
-                <div className="text-3xl mb-2">📭</div>
-                <p className="text-sm">この日のタスクはありません</p>
+                </button>
+              )
+            })}
+            {Object.keys(bigGroups).length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-5xl mb-3">🎯</div>
+                <p className="text-gray-500 font-bold">まだ計画がありません</p>
+                <p className="text-gray-400 text-sm mt-1">「＋ 新しい計画」から始めよう！</p>
               </div>
             )}
-            {dayTasks.map(task => (
-              <div key={task.id} className={`bg-white rounded-2xl p-4 shadow-sm border-2 transition ${
-                task.is_done===1 ? 'border-green-200 bg-green-50' : 'border-gray-100'
-              }`}>
-                <div className="flex items-start gap-3">
-                  <button onClick={() => toggleDone(task)}
-                    className={`w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 transition ${
-                      task.is_done===1 ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300'
-                    }`}>
-                    {task.is_done===1 && '✓'}
-                  </button>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span>{taskIcon(task.task_type ?? '')}</span>
-                      <span className={`font-bold text-sm ${task.is_done===1 ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-                        {task.task_name}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-0.5">{task.big_plan}{task.mid_plan ? ` › ${task.mid_plan}` : ''}</p>
-                    {task.planned_minutes != null && task.planned_minutes > 0 && (
-                      <p className="text-xs text-indigo-400 mt-1">⏱ 予想 {task.planned_minutes}分</p>
-                    )}
+          </div>
+        )}
+
+        {/* ══ 中計画ビュー（月別ガント） ══ */}
+        {view === 'mid' && selectedBig && (
+          <div className="space-y-3">
+            <p className="text-xs text-gray-400">📅 月テーマをタップして小計画へ</p>
+            {months.map(month => {
+              const monthTasks = midPlans.filter(p => (p.task_date ?? '').slice(0, 7) === month)
+              const monthGroups = monthTasks.reduce<Record<string, PlanRow[]>>((acc, p) => {
+                const k = p.mid_plan || '未分類'; if (!acc[k]) acc[k] = []; acc[k].push(p); return acc
+              }, {})
+              return (
+                <div key={month} className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                  <div className="bg-blue-50 px-4 py-2 border-b border-blue-100">
+                    <span className="font-bold text-blue-700 text-sm">{month.replace('-','年')}月</span>
                   </div>
-                  {task.is_done !== 1 && (
-                    <div className="flex gap-1">
-                      <button onClick={() => moveTask(task, -1)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-lg">←</button>
-                      <button onClick={() => moveTask(task,  1)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-lg">→</button>
+                  <div className="p-3 space-y-2">
+                    {Object.entries(monthGroups).map(([mid, tasks]) => {
+                      const done = tasks.filter(t => t.is_done === 1).length
+                      const pct  = Math.round(done / tasks.length * 100)
+                      return (
+                        <button key={mid} onClick={() => { setSelectedMid(mid); setView('small') }}
+                          className="w-full text-left p-3 bg-gray-50 rounded-xl hover:bg-blue-50 transition active:scale-95">
+                          <div className="flex justify-between items-center mb-1.5">
+                            <span className="text-sm font-bold text-gray-700 truncate flex-1 pr-2">{mid}</span>
+                            <span className="text-xs text-gray-400 whitespace-nowrap">{done}/{tasks.length}</span>
+                          </div>
+                          <div className="w-full bg-gray-200 rounded-full h-1.5">
+                            <div className={`h-1.5 rounded-full transition-all ${pctColor(pct)}`} style={{ width: `${pct}%` }} />
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+            {months.length === 0 && (
+              <div className="text-center py-12">
+                <div className="text-4xl mb-3">📅</div>
+                <p className="text-gray-500">まだ月計画がありません</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ 小計画ビュー（週カレンダー） ══ */}
+        {view === 'small' && (
+          <div className="space-y-3">
+            {/* 週カレンダー */}
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              <div className="flex overflow-x-auto gap-1 p-2">
+                {weekDates.map(d => {
+                  const isToday  = d === todayStr()
+                  const isSel    = d === selectedDate
+                  const dayTasks = smallPlans.filter(p => (p.task_date ?? '').slice(0, 10) === d)
+                  const hasDone  = dayTasks.some(t => t.is_done === 1)
+                  const hasUndone= dayTasks.some(t => t.is_done === 0)
+                  const dow      = new Date(d + 'T00:00:00').getDay()
+                  return (
+                    <button key={d} onClick={() => setSelectedDate(d)}
+                      className={`flex flex-col items-center py-2 px-3 rounded-xl min-w-[44px] transition active:scale-95 ${
+                        isSel   ? 'bg-indigo-500 text-white shadow' :
+                        isToday ? 'bg-indigo-50 text-indigo-600 border border-indigo-200' :
+                                  'hover:bg-gray-50 text-gray-600'
+                      }`}>
+                      <span className="text-[10px] font-medium">{DAY_LABELS[dow]}</span>
+                      <span className={`text-base font-bold ${dow === 0 ? 'text-red-400' : dow === 6 ? 'text-blue-400' : ''} ${isSel ? 'text-white' : ''}`}>
+                        {d.slice(8)}
+                      </span>
+                      <div className="flex gap-0.5 mt-0.5 h-1.5">
+                        {hasDone   && <span className="w-1.5 h-1.5 rounded-full bg-green-400" />}
+                        {hasUndone && <span className="w-1.5 h-1.5 rounded-full bg-yellow-400" />}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+              <div className="border-t border-gray-100 px-4 py-2 flex justify-between items-center">
+                <button onClick={() => {
+                  const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate() - 7)
+                  setSelectedDate(d.toISOString().slice(0, 10))
+                }} className="text-gray-400 hover:text-gray-600 px-2 py-1 rounded">← 前週</button>
+                <span className="text-xs text-gray-500 font-medium">
+                  {selectedDate.slice(0, 7).replace('-','年')}月{selectedDate.slice(8)}日
+                </span>
+                <button onClick={() => {
+                  const d = new Date(selectedDate + 'T00:00:00'); d.setDate(d.getDate() + 7)
+                  setSelectedDate(d.toISOString().slice(0, 10))
+                }} className="text-gray-400 hover:text-gray-600 px-2 py-1 rounded">次週 →</button>
+              </div>
+            </div>
+
+            {/* タスク一覧 */}
+            <div className="space-y-2">
+              {dayTasks.length === 0 ? (
+                <div className="text-center py-8 bg-white rounded-2xl border border-gray-100">
+                  <div className="text-4xl mb-2">📝</div>
+                  <p className="text-gray-400 text-sm">この日のタスクはありません</p>
+                </div>
+              ) : dayTasks.map(task => (
+                <div key={task.id} className={`bg-white rounded-2xl p-4 shadow-sm border transition ${task.is_done === 1 ? 'border-green-200 opacity-75' : 'border-gray-100'}`}>
+                  <div className="flex items-start gap-3">
+                    <button onClick={() => toggleDone(task)}
+                      className={`w-7 h-7 rounded-full border-2 flex items-center justify-center flex-shrink-0 transition ${task.is_done === 1 ? 'bg-green-500 border-green-500 text-white' : 'border-gray-300 hover:border-green-400'}`}>
+                      {task.is_done === 1 && '✓'}
+                    </button>
+                    <div className="flex-1 min-w-0">
+                      <p className={`font-bold text-sm ${task.is_done === 1 ? 'line-through text-gray-400' : 'text-gray-800'}`}>{task.task_name}</p>
+                      <div className="flex gap-2 mt-1 text-xs text-gray-400">
+                        <span>{taskIcon(task.task_type ?? 'other')}</span>
+                        <span>⏱ {task.planned_minutes}分</span>
+                      </div>
                     </div>
-                  )}
+                    <div className="flex gap-1">
+                      <button onClick={() => moveTask(task, -1)} className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-lg transition">←</button>
+                      <button onClick={() => moveTask(task, 1)}  className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-lg transition">→</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* タスク追加ボタン */}
+            <button onClick={() => setShowAdd(true)}
+              className="w-full border-2 border-dashed border-indigo-300 rounded-2xl py-3 text-indigo-500 font-bold hover:bg-indigo-50 transition active:scale-95">
+              ＋ この日にタスクを追加
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* ══ タスク追加モーダル ══ */}
+      {showAdd && (
+        <div className="fixed inset-0 bg-black/40 z-40 flex items-end" onClick={() => setShowAdd(false)}>
+          <div className="bg-white rounded-t-3xl w-full p-6 space-y-4 max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-center">
+              <h2 className="text-lg font-bold text-gray-800">📝 タスクを追加</h2>
+              <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium">タスク名 *</label>
+                <input value={newTask.task_name} onChange={e => setNewTask(p => ({ ...p, task_name: e.target.value }))}
+                  placeholder="例：説明文読解ドリル P.1-2"
+                  className="w-full mt-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 font-medium">種類</label>
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {TASK_TYPES.map(t => (
+                    <button key={t.value} onClick={() => setNewTask(p => ({ ...p, task_type: t.value }))}
+                      className={`text-xs px-3 py-1.5 rounded-full border transition ${newTask.task_type === t.value ? 'bg-indigo-500 text-white border-indigo-500' : 'border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                      {t.label}
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
-
-          {/* タスク追加ボタン */}
-          <div className="px-4 mt-5">
-            <button onClick={() => setShowAdd(true)}
-              className="w-full bg-gradient-to-r from-indigo-500 to-blue-500 text-white py-4 rounded-2xl font-bold text-base shadow-lg hover:shadow-xl transition active:scale-95">
-              ＋ タスクを追加
+              <div>
+                <label className="text-xs text-gray-500 font-medium">予想時間：{newTask.planned_minutes}分</label>
+                <input type="range" min="5" max="120" step="5" value={newTask.planned_minutes}
+                  onChange={e => setNewTask(p => ({ ...p, planned_minutes: Number(e.target.value) }))}
+                  className="w-full mt-1 accent-indigo-500" />
+              </div>
+            </div>
+            <button onClick={addTask}
+              className="w-full bg-indigo-500 text-white font-bold py-3 rounded-2xl hover:bg-indigo-600 transition active:scale-95">
+              ＋ 追加する
             </button>
           </div>
         </div>
       )}
 
-      {/* ── タスク追加モーダル ── */}
-      {showAdd && (
-        <div className="fixed inset-0 bg-black/50 flex items-end z-50" onClick={() => setShowAdd(false)}>
-          <div className="bg-white rounded-t-3xl p-6 w-full max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-1">📝 タスクを追加</h2>
-            <p className="text-sm text-indigo-400 mb-4">📅 {selectedDate.slice(5).replace('-','/')}</p>
-            <div className="space-y-3">
+      {/* ══ 計画ウィザード ══ */}
+      {showWizard && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
+          <div className="bg-white rounded-t-3xl w-full p-6 space-y-5 max-h-[90vh] overflow-y-auto">
+
+            {/* ウィザードヘッダー */}
+            <div className="flex justify-between items-center">
               <div>
-                <label className="text-sm font-bold text-gray-600">タスク名 *</label>
-                <input value={newTask.task_name} onChange={e => setNewTask(p => ({ ...p, task_name: e.target.value }))}
-                  placeholder="例：英単語50個"
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
+                <h2 className="text-lg font-bold text-gray-800">
+                  {wizStep === 1 ? '🎯 Step 1：ゴールを決める' :
+                   wizStep === 2 ? '📅 Step 2：月割り計画' :
+                                   '📝 Step 3：最初のタスク'}
+                </h2>
+                <p className="text-xs text-gray-400 mt-0.5">
+                  {wizStep === 1 ? '大きな目標を入力しましょう' :
+                   wizStep === 2 ? '今月のテーマと締め切りを決めましょう' :
+                                   '今日から取り組む最初のタスクを作りましょう'}
+                </p>
               </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="text-sm font-bold text-gray-600">大計画</label>
-                  <input value={newTask.big_plan} onChange={e => setNewTask(p => ({ ...p, big_plan: e.target.value }))}
-                    placeholder={selectedBig || '例：受験合格！'}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                </div>
-                <div className="flex-1">
-                  <label className="text-sm font-bold text-gray-600">中計画</label>
-                  <input value={newTask.mid_plan} onChange={e => setNewTask(p => ({ ...p, mid_plan: e.target.value }))}
-                    placeholder={selectedMid || '例：英検4級単語'}
-                    className="w-full border border-gray-300 rounded-xl px-3 py-2 mt-1 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400" />
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-bold text-gray-600">タスク種別</label>
-                <div className="grid grid-cols-3 gap-2 mt-1">
-                  {TASK_TYPES.map(t => (
-                    <button key={t.value} onClick={() => setNewTask(p => ({ ...p, task_type: t.value }))}
-                      className={`py-2 rounded-xl text-sm font-bold border-2 transition ${
-                        newTask.task_type === t.value ? 'bg-indigo-500 text-white border-indigo-500' : 'bg-gray-50 border-gray-200 text-gray-600'
-                      }`}>{t.label}</button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-sm font-bold text-gray-600">予想時間: {newTask.planned_minutes}分</label>
-                <input type="range" min={5} max={120} step={5} value={newTask.planned_minutes}
-                  onChange={e => setNewTask(p => ({ ...p, planned_minutes: Number(e.target.value) }))}
-                  className="w-full mt-1 accent-indigo-500" />
-                <div className="flex justify-between text-xs text-gray-400"><span>5分</span><span>60分</span><span>120分</span></div>
-              </div>
+              <button onClick={() => setShowWizard(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
             </div>
-            <div className="flex gap-3 mt-6">
-              <button onClick={() => setShowAdd(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-2xl font-bold">キャンセル</button>
-              <button onClick={addTask} className="flex-1 bg-gradient-to-r from-indigo-500 to-blue-500 text-white py-3 rounded-2xl font-bold shadow-md">✅ 追加する</button>
+
+            {/* ステップインジケーター */}
+            <div className="flex items-center gap-2">
+              {[1,2,3].map(s => (
+                <div key={s} className={`flex-1 h-1.5 rounded-full transition-all ${s <= wizStep ? 'bg-indigo-500' : 'bg-gray-200'}`} />
+              ))}
             </div>
+
+            {/* Step 1：大計画 */}
+            {wizStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-bold text-gray-700">🏆 達成したいゴールは？</label>
+                  <input
+                    value={wizData.big_plan}
+                    onChange={e => setWizData(p => ({ ...p, big_plan: e.target.value }))}
+                    placeholder="例：大手門中学校 合格！"
+                    className="w-full mt-2 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-400"
+                  />
+                </div>
+                <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-3">
+                  <p className="text-xs text-yellow-700 font-medium">💡 ヒント</p>
+                  <p className="text-xs text-yellow-600 mt-1">具体的に書くほどやる気が上がります！<br/>例）英検3級合格・NSA検定合格・〇〇中学受験合格</p>
+                </div>
+                {/* 既存の大計画候補 */}
+                {Object.keys(bigGroups).length > 0 && (
+                  <div>
+                    <p className="text-xs text-gray-400 mb-2">または既存のゴールに追加：</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.keys(bigGroups).map(bg => (
+                        <button key={bg} onClick={() => setWizData(p => ({ ...p, big_plan: bg }))}
+                          className={`text-xs px-3 py-1.5 rounded-full border transition ${wizData.big_plan === bg ? 'bg-indigo-500 text-white border-indigo-500' : 'border-gray-200 text-gray-600 hover:border-indigo-300'}`}>
+                          {bg}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <button
+                  onClick={() => wizData.big_plan.trim() ? setWizStep(2) : showToast('ゴールを入力してください')}
+                  className="w-full bg-indigo-500 text-white font-bold py-3 rounded-2xl hover:bg-indigo-600 transition active:scale-95">
+                  次へ →
+                </button>
+              </div>
+            )}
+
+            {/* Step 2：中計画 */}
+            {wizStep === 2 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-bold text-gray-700">📚 今月のテーマ（中計画）</label>
+                  <input
+                    value={wizData.mid_plan}
+                    onChange={e => setWizData(p => ({ ...p, mid_plan: e.target.value }))}
+                    placeholder="例：みんなの日本語 第1〜5課"
+                    className="w-full mt-2 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">🗓️ 締め切り（任意）</label>
+                  <input
+                    type="date"
+                    value={wizData.deadline}
+                    onChange={e => setWizData(p => ({ ...p, deadline: e.target.value }))}
+                    className="w-full mt-2 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">📝 今月のメモ（任意）</label>
+                  <textarea
+                    value={wizData.month_plan}
+                    onChange={e => setWizData(p => ({ ...p, month_plan: e.target.value }))}
+                    placeholder="例：週3回・1回30分を目標にする"
+                    rows={2}
+                    className="w-full mt-2 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-400 resize-none"
+                  />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setWizStep(1)}
+                    className="flex-1 border-2 border-gray-200 text-gray-600 font-bold py-3 rounded-2xl hover:bg-gray-50 transition">
+                    ← 戻る
+                  </button>
+                  <button onClick={() => wizData.mid_plan.trim() ? setWizStep(3) : showToast('今月のテーマを入力してください')}
+                    className="flex-2 flex-1 bg-blue-500 text-white font-bold py-3 rounded-2xl hover:bg-blue-600 transition active:scale-95">
+                    次へ →
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Step 3：小計画（最初のタスク） */}
+            {wizStep === 3 && (
+              <div className="space-y-4">
+                <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3">
+                  <p className="text-xs text-indigo-600">🏆 {wizData.big_plan}</p>
+                  <p className="text-xs text-blue-600 mt-0.5">📅 {wizData.mid_plan}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">📝 最初のタスクは何をする？</label>
+                  <input
+                    value={wizData.task_name}
+                    onChange={e => setWizData(p => ({ ...p, task_name: e.target.value }))}
+                    placeholder="例：説明文読解ドリル P.1-2"
+                    className="w-full mt-2 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-green-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">📅 いつやる？</label>
+                  <input
+                    type="date"
+                    value={wizData.task_date}
+                    onChange={e => setWizData(p => ({ ...p, task_date: e.target.value }))}
+                    className="w-full mt-2 border-2 border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-green-400"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">種類</label>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {TASK_TYPES.map(t => (
+                      <button key={t.value} onClick={() => setWizData(p => ({ ...p, task_type: t.value }))}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition ${wizData.task_type === t.value ? 'bg-green-500 text-white border-green-500' : 'border-gray-200 text-gray-600 hover:border-green-300'}`}>
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-sm font-bold text-gray-700">予想時間：{wizData.planned_minutes}分</label>
+                  <input type="range" min="5" max="120" step="5" value={wizData.planned_minutes}
+                    onChange={e => setWizData(p => ({ ...p, planned_minutes: Number(e.target.value) }))}
+                    className="w-full mt-2 accent-green-500" />
+                </div>
+                <div className="flex gap-3">
+                  <button onClick={() => setWizStep(2)}
+                    className="flex-1 border-2 border-gray-200 text-gray-600 font-bold py-3 rounded-2xl hover:bg-gray-50 transition">
+                    ← 戻る
+                  </button>
+                  <button onClick={completeWizard}
+                    className="flex-1 bg-green-500 text-white font-bold py-3 rounded-2xl hover:bg-green-600 transition active:scale-95">
+                    🏆 計画を作成！
+                  </button>
+                </div>
+              </div>
+            )}
+
           </div>
         </div>
       )}
+
     </div>
   )
 }
