@@ -1,8 +1,8 @@
-﻿'use client'
+'use client'
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { loadAllUsers, loadNews, insertNews, deleteNews, loadPlans, insertPlan, deletePlan, todayStr, type UserRow, type NewsRow, type PlanRow } from '@/lib/student'
+import { loadAllUsers, loadNews, insertNews, deleteNews, loadAllPlans, insertPlan, deletePlan, todayStr, type UserRow, type NewsRow, type PlanRow } from '@/lib/student'
 
 const ADMIN_PASSWORD = 'admin'
 type Tab = 'realtime' | 'progress' | 'news' | 'tasks'
@@ -75,7 +75,7 @@ export default function AdminPage() {
 
   async function loadData() {
     setLoading(true)
-    const [u, n, p] = await Promise.all([loadAllUsers(), loadNews(), loadPlans()])
+    const [u, n, p] = await Promise.all([loadAllUsers(), loadNews(), loadAllPlans()])
     setUsers(u)
     setNews(n)
     setPlans(p)
@@ -110,7 +110,7 @@ export default function AdminPage() {
   async function handleAddNews(e: React.FormEvent) {
     e.preventDefault()
     if (!newMsg.trim()) return
-    await insertNews(newMsg.trim(), todayStr(), newTarget)
+    await insertNews({ message: newMsg.trim(), created_date: todayStr(), target_user: newTarget })
     setNewMsg('')
     setNews(await loadNews())
   }
@@ -134,14 +134,14 @@ export default function AdminPage() {
     setTaskName(''); setTaskVideo(''); setTaskPage('')
     setTaskMsg('✅ タスクを追加しました！')
     setTimeout(() => setTaskMsg(''), 2000)
-    setPlans(await loadPlans())
+    setPlans(await loadAllPlans())
     setTaskSaving(false)
   }
 
   async function handleDeleteTask(id: number) {
     if (!confirm('このタスクを削除しますか？')) return
     await deletePlan(id)
-    setPlans(await loadPlans())
+    setPlans(await loadAllPlans())
   }
 
   if (!authed) {

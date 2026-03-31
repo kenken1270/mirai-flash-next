@@ -1,4 +1,4 @@
-﻿'use client'
+'use client'
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -28,7 +28,7 @@ export default function SchedulePage() {
       if (!session) { router.push('/login'); return }
       const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
       setUsername(uname)
-      const [userData, allPlans] = await Promise.all([loadUser(uname), loadPlans()])
+      const [userData, allPlans] = await Promise.all([loadUser(uname), loadPlans(uname)])
       setUser(userData)
       const today = todayStr()
       const tasks = allPlans.filter(

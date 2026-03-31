@@ -10,6 +10,9 @@ export type UserRow = {
   recent_login_dates: string
   nickname: string
   lang: string
+  grade_num: number
+  current_status: string
+  status_updated_at: string
 }
 
 export type NewsRow = {
@@ -35,6 +38,10 @@ export type PlanRow = {
   task_type: string
   planned_minutes?: number
   actual_minutes?: number
+  see_score?: number
+  see_comment?: string
+  teacher_stamp?: boolean
+  stamp_at?: string
 }
 
 export type EventRow = {
@@ -46,38 +53,30 @@ export type EventRow = {
   note: string
 }
 
-// ─────────────────────────────
-// ユーザー
-// ─────────────────────────────
+// ===========================
+// ユーザー関数
+// ===========================
 export async function loadAllUsers(): Promise<UserRow[]> {
   const { data } = await supabase.from('users').select('*')
   return data ?? []
 }
 
 export async function loadUser(username: string): Promise<UserRow | null> {
-  const { data, error } = await supabase
+  const { data } = await supabase
     .from('users')
     .select('*')
     .eq('username', username)
-    .limit(1)
-  if (error) {
-    console.error('loadUser error:', error)
-    return null
-  }
-  return (data && data.length > 0) ? data[0] : null
+    .single()
+  return data ?? null
 }
 
-export async function saveUserFields(username: string, fields: Partial<UserRow>) {
-  const { error } = await supabase
-    .from('users')
-    .update(fields)
-    .eq('username', username)
-  if (error) console.error('saveUserFields error:', error)
+export async function saveUserFields(username: string, fields: Partial<UserRow>): Promise<void> {
+  await supabase.from('users').update(fields).eq('username', username)
 }
 
-// ─────────────────────────────
-// お知らせ
-// ─────────────────────────────
+// ===========================
+// ニュース関数
+// ===========================
 export async function loadNews(): Promise<NewsRow[]> {
   const { data } = await supabase
     .from('news')
@@ -86,41 +85,46 @@ export async function loadNews(): Promise<NewsRow[]> {
   return data ?? []
 }
 
-export async function insertNews(message: string, createdDate: string, targetUser: string) {
-  await supabase.from('news').insert({
-    message,
-    created_date: createdDate,
-    target_user: targetUser,
-  })
+export async function insertNews(row: Omit<NewsRow, 'id'>): Promise<void> {
+  await supabase.from('news').insert(row)
 }
 
-export async function deleteNews(id: number) {
+export async function deleteNews(id: number): Promise<void> {
   await supabase.from('news').delete().eq('id', id)
 }
 
-// ─────────────────────────────
-// 計画
-// ─────────────────────────────
-export async function loadPlans(): Promise<PlanRow[]> {
-  const { data } = await supabase.from('plans').select('*')
+// ===========================
+// プラン関数
+// ===========================
+export async function loadPlans(username: string): Promise<PlanRow[]> {
+  const { data } = await supabase
+    .from('plans')
+    .select('*')
+    .eq('username', username)
+    .order('id')
   return data ?? []
 }
 
-export async function updatePlan(id: number, fields: Partial<PlanRow>) {
+export async function updatePlan(id: number, fields: Partial<PlanRow>): Promise<void> {
   await supabase.from('plans').update(fields).eq('id', id)
 }
 
-export async function insertPlan(row: Omit<PlanRow, 'id'>) {
+export async function insertPlan(row: Omit<PlanRow, 'id'>): Promise<void> {
   await supabase.from('plans').insert(row)
 }
 
-export async function deletePlan(id: number) {
+export async function deletePlan(id: number): Promise<void> {
   await supabase.from('plans').delete().eq('id', id)
 }
 
-// ─────────────────────────────
-// イベント
-// ─────────────────────────────
+export async function loadAllPlans(): Promise<PlanRow[]> {
+  const { data } = await supabase.from('plans').select('*').order('id')
+  return data ?? []
+}
+
+// ===========================
+// イベント関数
+// ===========================
 export async function loadEvents(username: string): Promise<EventRow[]> {
   const { data } = await supabase
     .from('events')
@@ -130,25 +134,17 @@ export async function loadEvents(username: string): Promise<EventRow[]> {
   return data ?? []
 }
 
-export async function insertEvent(row: Omit<EventRow, 'id'>) {
+export async function insertEvent(row: Omit<EventRow, 'id'>): Promise<void> {
   await supabase.from('events').insert(row)
 }
 
-export async function deleteEvent(id: number) {
+export async function deleteEvent(id: number): Promise<void> {
   await supabase.from('events').delete().eq('id', id)
 }
 
-// ─────────────────────────────
-// 日付ユーティリティ
-// ─────────────────────────────
+// ===========================
+// ユーティリティ
+// ===========================
 export function todayStr(): string {
-  return new Date().toISOString().split('T')[0]
-}
-export async function loadAllPlans(): Promise<PlanRow[]> {
-  const { data, error } = await supabase
-    .from('plans')
-    .select('*')
-    .order('id', { ascending: true })
-  if (error || !data) return []
-  return data as PlanRow[]
+  return new Date().toISOString().slice(0, 10)
 }
