@@ -211,6 +211,15 @@ export default function SchedulePage() {
                     )}
                   </div>
 
+                  {/* 学習開始ボタン */}
+                  {task.is_done !== 1 && (
+                    <div className="mt-2 ml-9">
+                      <button onClick={() => router.push(`/student/do/${task.id}`)}
+                        className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-green-600 transition w-full">
+                        📖 学習開始 →
+                      </button>
+                    </div>
+                  )}
                   {/* タイマーエリア（未完了タスクのみ） */}
                   {task.is_done !== 1 && (
                     <div className="mt-3 ml-9 bg-gray-50 rounded-xl p-3">
