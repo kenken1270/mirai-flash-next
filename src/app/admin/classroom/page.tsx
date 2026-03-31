@@ -145,7 +145,6 @@ export default function ClassroomPage() {
                       .from('plans')
                       .select('id')
                       .eq('username', student.username)
-                      .eq('is_done', 1)
                       .is('teacher_stamp', false)
                       .order('id', { ascending: false })
                       .limit(1)
