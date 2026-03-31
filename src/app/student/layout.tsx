@@ -1,14 +1,14 @@
-﻿'use client'
+'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
 const NAV = [
-  { href: '/student',          label: 'ホーム',       icon: '🏠' },
-  { href: '/student/schedule', label: '今日の学習',   icon: '📅' },
-  { href: '/student/plan',     label: '計画確認',     icon: '🗺️' },
-  { href: '/student/test',     label: '小テスト',     icon: '✏️' },
-  { href: '/student/gacha',    label: 'ガチャ',       icon: '🎁' },
+  { href: '/student',          label: 'ホーム',     icon: '🏠' },
+  { href: '/student/schedule', label: '今日',       icon: '📅' },
+  { href: '/student/calendar', label: 'カレンダー', icon: '📆' },
+  { href: '/student/plan',     label: '計画',       icon: '🗺️' },
+  { href: '/student/test',     label: 'テスト',     icon: '✏️' },
 ]
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +22,6 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="min-h-screen bg-amber-50 pb-24">
-      {/* ヘッダー */}
       <header className="bg-yellow-400 shadow-md px-4 py-3 flex items-center justify-between sticky top-0 z-50">
         <div className="flex items-center gap-2">
           <span className="text-2xl">📚</span>
@@ -36,12 +35,10 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
         </button>
       </header>
 
-      {/* メインコンテンツ */}
       <main className="max-w-2xl mx-auto px-4 pt-4">
         {children}
       </main>
 
-      {/* ボトムナビ */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
         <div className="flex justify-around items-center max-w-2xl mx-auto">
           {NAV.map(({ href, label, icon }) => {
