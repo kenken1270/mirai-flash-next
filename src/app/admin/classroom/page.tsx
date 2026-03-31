@@ -25,6 +25,7 @@ export default function ClassroomPage() {
   const [students, setStudents] = useState<StudentStatus[]>([])
   const [loading, setLoading]   = useState(true)
   const [filter, setFilter]     = useState<string>('all')
+  const [stampCodes, setStampCodes] = useState<Record<string, string>>({})
 
   useEffect(() => {
     async function init() {
@@ -39,31 +40,32 @@ export default function ClassroomPage() {
       setLoading(false)
     }
     init()
-
-    const channel = supabase
-      .channel('classroom-realtime')
-      .on('postgres_changes', {
-        event: 'UPDATE', schema: 'public', table: 'users',
-      }, () => {
-        supabase.from('users')
-          .select('username, nickname, current_status, status_updated_at, grade_num, current_points')
-          .not('username', 'is', null)
-          .order('current_status')
-          .then(({ data }) => setStudents((data ?? []) as StudentStatus[]))
-      })
-      .subscribe()
-
-    return () => { supabase.removeChannel(channel) }
+    const interval = setInterval(async () => {
+      const { data } = await supabase
+        .from('users')
+        .select('username, nickname, current_status, status_updated_at, grade_num, current_points')
+        .not('username', 'is', null)
+        .order('current_status')
+      setStudents((data ?? []) as StudentStatus[])
+    }, 5000)
+    return () => clearInterval(interval)
   }, [router])
 
-  async function giveStamp(username: string, taskId?: number) {
-    if (!taskId) return
-    await supabase.from('plans')
-      .update({ teacher_stamp: true, stamp_at: new Date().toISOString() })
-      .eq('id', taskId)
-    await supabase.from('users')
-      .update({ current_status: 'seeing', status_updated_at: new Date().toISOString() })
+  async function giveStamp(username: string) {
+    const code = String(Math.floor(1000 + Math.random() * 9000))
+    const { data } = await supabase
+      .from('plans')
+      .select('id')
       .eq('username', username)
+      .is('teacher_stamp', false)
+      .order('id', { ascending: false })
+      .limit(1)
+    if (data && data.length > 0) {
+      await supabase.from('plans')
+        .update({ stamp_code: code })
+        .eq('id', data[0].id)
+      setStampCodes(prev => ({ ...prev, [username]: code }))
+    }
   }
 
   const filtered = filter === 'all'
@@ -82,10 +84,9 @@ export default function ClassroomPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 space-y-4">
-
       <div className="bg-gradient-to-r from-gray-700 to-gray-900 rounded-2xl p-5 text-white shadow-md">
         <h1 className="text-xl font-bold">🏫 リアルタイム教室マップ</h1>
-        <p className="text-sm opacity-70 mt-1">生徒の学習状況をリアルタイムで確認</p>
+        <p className="text-sm opacity-70 mt-1">生徒の学習状況を確認（5秒自動更新）</p>
         <div className="flex gap-4 mt-3">
           <div className="bg-white/10 rounded-xl px-3 py-2 text-center">
             <p className="text-xl font-black text-red-400">{waitingCount}</p>
@@ -125,6 +126,7 @@ export default function ClassroomPage() {
           const elapsed = student.status_updated_at
             ? Math.round((Date.now() - new Date(student.status_updated_at).getTime()) / 60000)
             : 0
+          const code = stampCodes[student.username]
 
           return (
             <div key={student.username}
@@ -138,23 +140,22 @@ export default function ClassroomPage() {
               <p className="text-xs text-gray-400 mt-0.5">{elapsed}分前から</p>
               <p className="text-xs text-yellow-600 mt-1">⚡ {student.current_points?.toLocaleString() ?? 0} XP</p>
 
-              {statusKey === 'waiting_check' && (
+              {statusKey === 'waiting_check' && !code && (
                 <button
-                  onClick={async () => {
-                    const { data } = await supabase
-                      .from('plans')
-                      .select('id')
-                      .eq('username', student.username)
-                      .is('teacher_stamp', false)
-                      .order('id', { ascending: false })
-                      .limit(1)
-                    if (data && data.length > 0) {
-                      await giveStamp(student.username, data[0].id)
-                    }
-                  }}
+                  onClick={() => giveStamp(student.username)}
                   className="mt-2 w-full bg-red-500 text-white py-1.5 rounded-xl text-xs font-bold hover:bg-red-600 transition animate-pulse">
                   🎖️ スタンプ押す
                 </button>
+              )}
+
+              {statusKey === 'waiting_check' && code && (
+                <div className="mt-2 bg-yellow-50 border-2 border-yellow-400 rounded-xl p-2 text-center">
+                  <p className="text-xs text-gray-500 mb-1">承認コード</p>
+                  <p className="text-3xl font-black text-yellow-600 tracking-widest">{code}</p>
+                  <p className="text-xs text-gray-400 mt-1">生徒に口頭で伝えてください</p>
+                  <button onClick={() => setStampCodes(prev => { const n = {...prev}; delete n[student.username]; return n })}
+                    className="mt-1 text-xs text-gray-400 underline">リセット</button>
+                </div>
               )}
             </div>
           )
