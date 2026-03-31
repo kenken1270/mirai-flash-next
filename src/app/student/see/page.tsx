@@ -71,12 +71,12 @@ function SeeContent() {
   }
 
   async function handleSave() {
-    if (!task || score === 0) return
+    if (score === 0) return
     const xp = score >= 4 ? 20 : score >= 3 ? 10 : 5
-    await updatePlan(task.id, {
+    if (task) { await updatePlan(task.id, {
       see_score:   score,
       see_comment: comment + (improvement.length > 0 ? '\n【次回の改善】' + improvement.join('、') : ''),
-    })
+    }) }
     if (user) {
       const newXp = (user.current_points ?? 0) + xp
       await saveUserFields(username, {
