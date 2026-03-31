@@ -395,8 +395,8 @@ export default function PlanPage() {
 
       {/* ══ タスク追加モーダル ══ */}
       {showAdd && (
-        <div className="fixed inset-0 bg-black/40 z-40 flex items-end" onClick={() => setShowAdd(false)}>
-          <div className="bg-white rounded-t-3xl w-full p-6 space-y-4 max-h-[calc(100dvh-80px)] overflow-y-auto pb-8" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/40 z-40 flex items-end pb-16" onClick={() => setShowAdd(false)}>
+          <div className="bg-white rounded-t-3xl w-full p-5 space-y-4 overflow-y-auto pb-4 max-h-[70vh] sm:max-h-[75vh] lg:max-h-[80vh]" onClick={e => e.stopPropagation()}>
             <div className="flex justify-between items-center">
               <h2 className="text-lg font-bold text-gray-800">📝 タスクを追加</h2>
               <button onClick={() => setShowAdd(false)} className="text-gray-400 hover:text-gray-600 text-xl">✕</button>
@@ -436,8 +436,8 @@ export default function PlanPage() {
 
       {/* ══ 計画ウィザード ══ */}
       {showWizard && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-end">
-          <div className="bg-white rounded-t-3xl w-full p-6 space-y-5 max-h-[calc(100dvh-80px)] overflow-y-auto pb-8">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-end pb-16">
+          <div className="bg-white rounded-t-3xl w-full p-5 space-y-4 overflow-y-auto pb-4 max-h-[70vh] sm:max-h-[75vh] lg:max-h-[80vh]">
 
             {/* ウィザードヘッダー */}
             <div className="flex justify-between items-center">
