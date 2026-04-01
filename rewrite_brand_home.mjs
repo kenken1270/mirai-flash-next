@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const page = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -26,7 +28,7 @@ function getMascot(tasks: PlanRow[], done: number) {
   if (tasks.length === 0) return { emoji: '🐕', msg: 'きょうはおやすみ？のんびりしよ〜', face: 'zzz' }
   if (done === tasks.length) return { emoji: '🐕', msg: 'ぜんぶできた！！すごすぎる！！', face: 'excited' }
   if (done === 0) return { emoji: '🐕', msg: 'さあはじめよう！いっしょにがんばる！', face: 'normal' }
-  return { emoji: '🐕', msg: `もう${done}こできた！あとちょっと！`, face: 'happy' }
+  return { emoji: '🐕', msg: \`もう\${done}こできた！あとちょっと！\`, face: 'happy' }
 }
 
 export default function StudentHome() {
@@ -103,7 +105,7 @@ export default function StudentHome() {
           <div className="bg-amber-200 rounded-full h-3 w-full overflow-hidden">
             <div
               className="h-full bg-amber-700 rounded-full transition-all duration-700"
-              style={{ width: `${(current / needed) * 100}%` }}
+              style={{ width: \`\${(current / needed) * 100}%\` }}
             />
           </div>
           <div className="flex justify-between mt-1">
@@ -124,7 +126,7 @@ export default function StudentHome() {
           <div className="bg-amber-100 rounded-full h-4 overflow-hidden">
             <div
               className="h-full bg-amber-400 rounded-full transition-all duration-700 flex items-center justify-end pr-2"
-              style={{ width: `${progressPct}%` }}
+              style={{ width: \`\${progressPct}%\` }}
             >
               {progressPct > 20 && <span className="text-xs text-amber-900 font-black">{progressPct}%</span>}
             </div>
@@ -145,7 +147,7 @@ export default function StudentHome() {
             <button
               key={item.id}
               onClick={() => router.push(item.href)}
-              className={`${item.bg} rounded-2xl p-4 flex flex-col items-center gap-2 shadow active:scale-95 transition-all border-b-4 border-amber-600`}
+              className={\`\${item.bg} rounded-2xl p-4 flex flex-col items-center gap-2 shadow active:scale-95 transition-all border-b-4 border-amber-600\`}
             >
               <span className="text-3xl">{item.emoji}</span>
               <span className="text-amber-900 font-black text-sm">{item.label}</span>
@@ -165,3 +167,7 @@ export default function StudentHome() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/page.tsx', page, 'utf8');
+console.log('OK');
