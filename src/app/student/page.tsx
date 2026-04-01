@@ -11,7 +11,7 @@ const MENU_ITEMS = [
   { id: 'calendar', label: 'カレンダー', emoji: '📅', href: '/student/calendar' },
   { id: 'test',     label: 'テスト',     emoji: '✏️',  href: '/student/test'     },
   { id: 'gacha',    label: 'ガチャ',     emoji: '🎰', href: '/student/gacha'    },
-  { id: 'flash',    label: 'フラッシュ', emoji: '⚡', href: '/student/flash'    },
+  { id: 'tango',    label: 'たんご',     emoji: '🃏', href: '/student/tango'    },
   { id: 'help',     label: '先生に聞く', emoji: '🐕', href: '/student/help'     },
   { id: 'break',    label: 'ひと休み',   emoji: '☕', href: '/student/break'    },
 ]
