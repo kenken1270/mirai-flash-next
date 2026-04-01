@@ -1,4 +1,74 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+// ===== layout.tsx =====
+const layout = `'use client'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
+
+const NAV = [
+  { href: '/student',          label: 'ホーム',     icon: '🏠' },
+  { href: '/student/today',    label: '今日',        icon: '📅' },
+  { href: '/student/calendar', label: 'カレンダー',  icon: '🗓' },
+  { href: '/student/plan',     label: '計画',        icon: '📋' },
+  { href: '/student/test',     label: 'テスト',      icon: '📝' },
+]
+
+export default function StudentLayout({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  const router = useRouter()
+  const isHome = pathname === '/student'
+
+  async function handleLogout() {
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
+  return (
+    <div className="min-h-screen bg-amber-50">
+      {/* ホーム以外のみヘッダー表示 */}
+      {!isHome && (
+        <header className="bg-yellow-400 shadow-md px-4 py-3 flex items-center justify-between sticky top-0 z-50">
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">📚</span>
+            <span className="font-bold text-gray-800 text-lg">未来塾</span>
+          </div>
+          <button onClick={handleLogout}
+            className="text-sm bg-white text-gray-700 px-3 py-1 rounded-full shadow hover:bg-gray-100 transition">
+            🚪 ログアウト
+          </button>
+        </header>
+      )}
+
+      <main className={\`\${isHome ? '' : 'max-w-2xl mx-auto px-4 pt-4 pb-24'}\`}>
+        {children}
+      </main>
+
+      {/* ホーム以外のみボトムナビ表示 */}
+      {!isHome && (
+        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg z-50">
+          <div className="flex justify-around items-center max-w-2xl mx-auto">
+            {NAV.map(({ href, label, icon }) => {
+              const isActive = pathname === href || (href !== '/student' && pathname.startsWith(href))
+              return (
+                <Link key={href} href={href}
+                  className={\`flex flex-col items-center py-2 px-3 text-xs transition-colors \${isActive ? 'text-yellow-500 font-bold' : 'text-gray-400 hover:text-gray-600'}\`}>
+                  <span className="text-xl mb-0.5">{icon}</span>
+                  <span>{label}</span>
+                  {isActive && <span className="w-1 h-1 rounded-full bg-yellow-400 mt-0.5" />}
+                </Link>
+              )
+            })}
+          </div>
+        </nav>
+      )}
+    </div>
+  )
+}
+`;
+
+// ===== page.tsx (ゲームHUD型ホーム) =====
+const page = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -152,7 +222,7 @@ export default function StudentHome() {
     <div className="relative min-h-screen overflow-hidden select-none" style={{fontFamily: 'sans-serif'}}>
 
       {/* ===== 背景グラデーション（世界観） ===== */}
-      <div className={`absolute inset-0 bg-gradient-to-br ${AVATAR_PARTS.bg[avatarBg]} opacity-90`} />
+      <div className={\`absolute inset-0 bg-gradient-to-br \${AVATAR_PARTS.bg[avatarBg]} opacity-90\`} />
       <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20" />
 
       {/* 装飾パーティクル */}
@@ -189,7 +259,7 @@ export default function StudentHome() {
             <h2 className="text-xl font-bold text-center mb-4">🎨 アバターをかざろう！</h2>
 
             {/* プレビュー */}
-            <div className={`bg-gradient-to-br ${AVATAR_PARTS.bg[avatarBg]} rounded-2xl p-6 text-center mb-4`}>
+            <div className={\`bg-gradient-to-br \${AVATAR_PARTS.bg[avatarBg]} rounded-2xl p-6 text-center mb-4\`}>
               <div className="text-6xl">{AVATAR_PARTS.hat[avatarHat]}</div>
               <div className="text-7xl">{AVATAR_PARTS.face[avatarFace]}</div>
               <p className="text-white font-bold mt-2">{user.username}</p>
@@ -202,7 +272,7 @@ export default function StudentHome() {
               <div className="flex flex-wrap gap-2">
                 {AVATAR_PARTS.face.map((f, i) => (
                   <button key={i} onClick={() => { if(i < unlockedFaces) { setAvatarFace(i); saveAvatar(i, avatarHat, avatarBg) }}}
-                    className={`text-3xl p-2 rounded-xl transition ${i < unlockedFaces ? (avatarFace === i ? 'bg-yellow-200 scale-110' : 'bg-gray-100 hover:bg-gray-200') : 'opacity-30 bg-gray-50 cursor-not-allowed'}`}>
+                    className={\`text-3xl p-2 rounded-xl transition \${i < unlockedFaces ? (avatarFace === i ? 'bg-yellow-200 scale-110' : 'bg-gray-100 hover:bg-gray-200') : 'opacity-30 bg-gray-50 cursor-not-allowed'}\`}>
                     {i < unlockedFaces ? f : '🔒'}
                   </button>
                 ))}
@@ -215,7 +285,7 @@ export default function StudentHome() {
               <div className="flex flex-wrap gap-2">
                 {AVATAR_PARTS.hat.map((h, i) => (
                   <button key={i} onClick={() => { if(i < unlockedHats) { setAvatarHat(i); saveAvatar(avatarFace, i, avatarBg) }}}
-                    className={`text-3xl p-2 rounded-xl transition ${i < unlockedHats ? (avatarHat === i ? 'bg-yellow-200 scale-110' : 'bg-gray-100 hover:bg-gray-200') : 'opacity-30 bg-gray-50 cursor-not-allowed'}`}>
+                    className={\`text-3xl p-2 rounded-xl transition \${i < unlockedHats ? (avatarHat === i ? 'bg-yellow-200 scale-110' : 'bg-gray-100 hover:bg-gray-200') : 'opacity-30 bg-gray-50 cursor-not-allowed'}\`}>
                     {i < unlockedHats ? (h || '🚫') : '🔒'}
                   </button>
                 ))}
@@ -228,7 +298,7 @@ export default function StudentHome() {
               <div className="flex flex-wrap gap-2">
                 {AVATAR_PARTS.bg.map((bg, i) => (
                   <button key={i} onClick={() => { if(i < unlockedBgs) { setAvatarBg(i); saveAvatar(avatarFace, avatarHat, i) }}}
-                    className={`w-10 h-10 rounded-xl bg-gradient-to-br ${bg} transition ${i < unlockedBgs ? (avatarBg === i ? 'ring-4 ring-yellow-400 scale-110' : 'hover:scale-105') : 'opacity-30 cursor-not-allowed'}`}>
+                    className={\`w-10 h-10 rounded-xl bg-gradient-to-br \${bg} transition \${i < unlockedBgs ? (avatarBg === i ? 'ring-4 ring-yellow-400 scale-110' : 'hover:scale-105') : 'opacity-30 cursor-not-allowed'}\`}>
                     {i >= unlockedBgs && <span className="flex items-center justify-center h-full text-white text-sm">🔒</span>}
                   </button>
                 ))}
@@ -327,7 +397,7 @@ export default function StudentHome() {
                   <span className="text-white/90 text-xs font-bold">{todayDone}/{todayTotal}</span>
                 </div>
                 <p className="text-orange-200 text-xs mt-0.5">
-                  {todayPct === 100 ? '🎉 全クリア！' : `あと${todayTotal - todayDone}タスク`}
+                  {todayPct === 100 ? '🎉 全クリア！' : \`あと\${todayTotal - todayDone}タスク\`}
                 </p>
               </div>
               <span className="text-white text-2xl">→</span>
@@ -337,7 +407,7 @@ export default function StudentHome() {
             <div className="grid grid-cols-3 gap-2 flex-1">
               {ACTION_BUTTONS.filter(b => b.path !== '/student/today').map(({ path, icon, label, color }) => (
                 <button key={path} onClick={() => router.push(path)}
-                  className={`${color} backdrop-blur rounded-xl flex flex-col items-center justify-center gap-1 p-2 active:scale-95 transition shadow text-white`}>
+                  className={\`\${color} backdrop-blur rounded-xl flex flex-col items-center justify-center gap-1 p-2 active:scale-95 transition shadow text-white\`}>
                   <span className="text-2xl">{icon}</span>
                   <span className="text-xs font-bold leading-tight text-center">{label}</span>
                 </button>
@@ -359,9 +429,9 @@ export default function StudentHome() {
                 const day = ['日','月','火','水','木','金','土'][new Date(d.date).getDay()]
                 return (
                   <div key={d.date} className="flex-1 flex flex-col items-center gap-0.5">
-                    <div className={`w-full rounded-t transition ${isToday ? 'bg-yellow-400' : d.done > 0 ? 'bg-white/60' : 'bg-white/20'}`}
+                    <div className={\`w-full rounded-t transition \${isToday ? 'bg-yellow-400' : d.done > 0 ? 'bg-white/60' : 'bg-white/20'}\`}
                       style={{ height: barH + 'px' }} />
-                    <span className={`text-xs ${isToday ? 'text-yellow-300 font-bold' : 'text-white/40'}`}>{day}</span>
+                    <span className={\`text-xs \${isToday ? 'text-yellow-300 font-bold' : 'text-white/40'}\`}>{day}</span>
                   </div>
                 )
               })}
@@ -388,3 +458,8 @@ export default function StudentHome() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/layout.tsx', layout, 'utf8');
+writeFileSync('src/app/student/page.tsx', page, 'utf8');
+console.log('OK');
