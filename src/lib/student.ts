@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 
 export type UserRow = {
+  exp?: number
   id: number
   username: string
   current_points: number

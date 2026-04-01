@@ -73,9 +73,9 @@ function SeeContent() {
     if (!task || !user || stamp === null) return
     setSaving(true)
     await updatePlan(task.id, {
-      score: stamp,
-      memo: JSON.stringify(meta),
-      done: true,
+      see_score: stamp,
+      see_comment: JSON.stringify(meta),
+      is_done: 1,
     })
     const addExp = stamp * 20
     await supabase.from('users').update({ exp: (user.exp ?? 0) + addExp }).eq('username', user.username)
