@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const code = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -81,11 +83,11 @@ export default function TodayPage() {
             {tasks.map(task => (
               <div
                 key={task.id}
-                className={`bg-white rounded-2xl shadow p-4 border-l-4 ${task.is_done === 1 ? 'border-green-400 opacity-70' : 'border-orange-400'}`}
+                className={\`bg-white rounded-2xl shadow p-4 border-l-4 \${task.is_done === 1 ? 'border-green-400 opacity-70' : 'border-orange-400'}\`}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex-1">
-                    <p className={`font-bold ${task.is_done === 1 ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                    <p className={\`font-bold \${task.is_done === 1 ? 'line-through text-gray-400' : 'text-gray-700'}\`}>
                       {task.is_done === 1 ? '✅ ' : '⏳ '}{task.task_name}
                     </p>
                     <div className="flex gap-3 mt-1">
@@ -139,3 +141,7 @@ export default function TodayPage() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/today/page.tsx', code, 'utf8');
+console.log('OK');
