@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const code = `'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -82,7 +84,7 @@ function HelpContent() {
             <button
               key={t}
               onClick={() => { setTab(t); setSent(false) }}
-              className={`flex-1 py-2 rounded-xl font-bold text-sm transition-all ${tab === t ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-500'}`}
+              className={\`flex-1 py-2 rounded-xl font-bold text-sm transition-all \${tab === t ? 'bg-blue-600 text-white shadow' : 'bg-gray-100 text-gray-500'}\`}
             >
               {t === 'send' ? '📨 質問を送る' : '📚 過去の質問'}
             </button>
@@ -132,7 +134,7 @@ function HelpContent() {
                     <button
                       key={s}
                       onClick={() => setSubject(s)}
-                      className={`px-3 py-1.5 rounded-full text-sm border-2 font-bold transition-all ${subject === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500'}`}
+                      className={\`px-3 py-1.5 rounded-full text-sm border-2 font-bold transition-all \${subject === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500'}\`}
                     >
                       {s}
                     </button>
@@ -194,7 +196,7 @@ function HelpContent() {
                     <button
                       key={s}
                       onClick={() => setFilterSubject(s)}
-                      className={`px-2.5 py-1 rounded-full text-xs border font-bold transition-all ${filterSubject === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500'}`}
+                      className={\`px-2.5 py-1 rounded-full text-xs border font-bold transition-all \${filterSubject === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500'}\`}
                     >
                       {s}
                     </button>
@@ -208,7 +210,7 @@ function HelpContent() {
                     <button
                       key={s}
                       onClick={() => setFilterStatus(s)}
-                      className={`px-3 py-1 rounded-full text-xs border font-bold transition-all ${filterStatus === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500'}`}
+                      className={\`px-3 py-1 rounded-full text-xs border font-bold transition-all \${filterStatus === s ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 text-gray-500'}\`}
                     >
                       {s === 'すべて' ? 'すべて' : s === 'open' ? '⏳ 未回答' : '✅ 解決済み'}
                     </button>
@@ -241,10 +243,10 @@ function HelpContent() {
               </div>
             ) : (
               filtered.map(h => (
-                <div key={h.id} className={`bg-white rounded-2xl shadow p-4 border-l-4 ${h.status === 'answered' ? 'border-green-400' : 'border-yellow-400'}`}>
+                <div key={h.id} className={\`bg-white rounded-2xl shadow p-4 border-l-4 \${h.status === 'answered' ? 'border-green-400' : 'border-yellow-400'}\`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">{h.subject}</span>
-                    <span className={`text-xs font-bold ${h.status === 'answered' ? 'text-green-600' : 'text-yellow-600'}`}>
+                    <span className={\`text-xs font-bold \${h.status === 'answered' ? 'text-green-600' : 'text-yellow-600'}\`}>
                       {STATUS_LABEL[h.status]}
                     </span>
                   </div>
@@ -276,3 +278,7 @@ export default function HelpPage() {
     </Suspense>
   )
 }
+`;
+
+writeFileSync('src/app/student/help/page.tsx', code, 'utf8');
+console.log('OK');
