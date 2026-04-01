@@ -125,7 +125,13 @@ function SeeContent() {
     const addExp = stamp * 20
     await supabase.from('users').update({ exp: (user.exp ?? 0) + addExp }).eq('username', user.username)
     showToast(`+${addExp} EXP 獲得！振り返り完了🎉`)
-    setTimeout(() => router.push('/student'), 2000)
+    const dest =
+      nextAction === 'retry'     ? `/student/do/${task?.id}` :
+      nextAction === 'help'      ? `/student/help?task_id=${task?.id}` :
+      nextAction === 'next_task' ? '/student/today' :
+      nextAction === 'rest'      ? '/student/break' :
+                                   '/student'
+    setTimeout(() => router.push(dest), 2000)
     setSaving(false)
   }
 
