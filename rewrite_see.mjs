@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const code = `'use client'
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -104,7 +106,7 @@ function SeeContent() {
 
         <div className="flex gap-2 mb-6">
           {[1,2,3].map(s => (
-            <div key={s} className={`flex-1 h-2 rounded-full transition-all ${step >= s ? 'bg-indigo-500' : 'bg-gray-200'}`} />
+            <div key={s} className={\`flex-1 h-2 rounded-full transition-all \${step >= s ? 'bg-indigo-500' : 'bg-gray-200'}\`} />
           ))}
         </div>
 
@@ -117,7 +119,7 @@ function SeeContent() {
                 <button
                   key={s.score}
                   onClick={() => setStamp(s.score)}
-                  className={`flex flex-col items-center p-3 rounded-xl border-2 transition-all ${stamp === s.score ? s.color + ' scale-110 font-bold' : 'border-gray-200 bg-gray-50'}`}
+                  className={\`flex flex-col items-center p-3 rounded-xl border-2 transition-all \${stamp === s.score ? s.color + ' scale-110 font-bold' : 'border-gray-200 bg-gray-50'}\`}
                 >
                   <span className="text-2xl">{s.emoji}</span>
                   <span className="text-xs mt-1 text-center leading-tight">{s.label}</span>
@@ -171,7 +173,7 @@ function SeeContent() {
                 <button
                   key={a.id}
                   onClick={() => setNextAction(a.id)}
-                  className={`p-4 rounded-xl border-2 flex flex-col items-center gap-1 transition-all ${nextAction === a.id ? 'border-indigo-500 bg-indigo-50 font-bold' : 'border-gray-200 bg-gray-50'}`}
+                  className={\`p-4 rounded-xl border-2 flex flex-col items-center gap-1 transition-all \${nextAction === a.id ? 'border-indigo-500 bg-indigo-50 font-bold' : 'border-gray-200 bg-gray-50'}\`}
                 >
                   <span className="text-2xl">{a.emoji}</span>
                   <span className="text-sm">{a.label}</span>
@@ -205,3 +207,7 @@ export default function SeePage() {
     </Suspense>
   )
 }
+`;
+
+writeFileSync('src/app/student/see/page.tsx', code, 'utf8');
+console.log('OK');
