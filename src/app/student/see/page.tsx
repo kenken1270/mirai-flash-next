@@ -8,14 +8,37 @@ import { getGradeMode, GRADE_CONFIG } from '@/lib/grade'
 const SEE_STAMPS = [
   { score: 5, emoji: '🔥', label: 'バッチリ！',     color: 'bg-red-100 border-red-400'    },
   { score: 4, emoji: '😊', label: 'よくできた',     color: 'bg-orange-100 border-orange-400' },
-  { score: 3, emoji: '🤔', label: 'まあまあ',       color: 'bg-yellow-100 border-yellow-400' },
-  { score: 2, emoji: '😓', label: 'むずかしかった', color: 'bg-blue-100 border-blue-400'   },
-  { score: 1, emoji: '❌', label: 'わからなかった', color: 'bg-gray-100 border-gray-400'   },
+  { score: 3, emoji: '🙂', label: 'まあまあ',       color: 'bg-yellow-100 border-yellow-400' },
+  { score: 2, emoji: '😅', label: 'むずかしかった', color: 'bg-blue-100 border-blue-400'   },
+  { score: 1, emoji: '😢', label: 'わからなかった', color: 'bg-gray-100 border-gray-400'   },
 ]
 
-const IMPROVEMENT_OPTIONS = [
-  '時間をもっとかける', '復習を増やす', '先生に質問する',
-  '教科書を読み直す', '問題を解き直す', '集中できる環境を作る',
+// EEFエビデンスに基づくメタ認知質問（学年別）
+const META_QUESTIONS = {
+  low: [
+    { id: 'what_good',  q: '🌟 どんなところが うまく できた？',         placeholder: 'たとえば：「さいごまで できた」' },
+    { id: 'what_hard',  q: '💪 むずかしかった ところは どこ？',          placeholder: 'たとえば：「かんじが むずかしかった」' },
+    { id: 'next_plan',  q: '🚀 つぎは どうやって やってみる？',          placeholder: 'たとえば：「もっとゆっくり よむ」' },
+  ],
+  mid: [
+    { id: 'what_good',  q: '✅ うまくできたことは？',                    placeholder: '例：集中して最後までできた' },
+    { id: 'what_hard',  q: '🤔 難しかったこと・わからなかったことは？',  placeholder: '例：漢字の読み方が分からなかった' },
+    { id: 'next_plan',  q: '🎯 次回はどう変える？',                      placeholder: '例：先に例文を読んでから問題を解く' },
+  ],
+  high: [
+    { id: 'what_good',  q: '✅ 効果的だった学習方法・戦略は？',          placeholder: '例：声に出して読んだら覚えやすかった' },
+    { id: 'what_hard',  q: '🧠 つまずいた原因の分析',                   placeholder: '例：前提知識が不足していた。〇〇を復習する必要がある' },
+    { id: 'next_plan',  q: '🎯 次回の学習戦略の修正点',                  placeholder: '例：時間配分を変えて、最初に難問に取り組む' },
+  ],
+}
+
+const NEXT_ACTIONS = [
+  { id: 'retry',    label: '🔁 もう一度やる',       color: 'bg-indigo-100 border-indigo-400 text-indigo-700' },
+  { id: 'review',   label: '📖 前の内容を復習',     color: 'bg-blue-100 border-blue-400 text-blue-700' },
+  { id: 'ask',      label: '🙋 先生に聞く',          color: 'bg-yellow-100 border-yellow-400 text-yellow-700' },
+  { id: 'next',     label: '⏭️ 次の内容に進む',     color: 'bg-green-100 border-green-400 text-green-700' },
+  { id: 'slow',     label: '🐢 ゆっくりやり直す',   color: 'bg-orange-100 border-orange-400 text-orange-700' },
+  { id: 'method',   label: '🔄 やり方を変える',     color: 'bg-purple-100 border-purple-400 text-purple-700' },
 ]
 
 function SeeContent() {
@@ -23,15 +46,17 @@ function SeeContent() {
   const sp = useSearchParams()
   const taskId = parseInt(sp.get('task_id') ?? '0')
 
-  const [user, setUser]         = useState<UserRow | null>(null)
-  const [task, setTask]         = useState<PlanRow | null>(null)
-  const [loading, setLoading]   = useState(true)
-  const [score, setScore]       = useState<number>(0)
-  const [comment, setComment]   = useState('')
-  const [improvement, setImprovement] = useState<string[]>([])
-  const [saved, setSaved]       = useState(false)
-  const [xpGained, setXpGained] = useState(0)
-  const [username, setUsername] = useState('')
+  const [user, setUser]           = useState<UserRow | null>(null)
+  const [task, setTask]           = useState<PlanRow | null>(null)
+  const [loading, setLoading]     = useState(true)
+  const [score, setScore]         = useState<number>(0)
+  const [metaAnswers, setMetaAnswers] = useState<Record<string, string>>({})
+  const [nextAction, setNextAction]   = useState<string>('')
+  const [teacherMsg, setTeacherMsg]   = useState('')
+  const [saved, setSaved]         = useState(false)
+  const [xpGained, setXpGained]   = useState(0)
+  const [username, setUsername]   = useState('')
+  const [step, setStep]           = useState<1|2|3>(1)
 
   useEffect(() => {
     async function init() {
@@ -41,13 +66,11 @@ function SeeContent() {
       setUsername(uname)
       const userData = await loadUser(uname)
       setUser(userData)
-
       if (taskId) {
         const { data } = await supabase.from('plans').select('*').eq('id', taskId).single()
         if (data) {
           setTask(data as PlanRow)
           setScore(data.see_score ?? 0)
-          setComment(data.see_comment ?? '')
         }
       }
       setLoading(false)
@@ -57,30 +80,34 @@ function SeeContent() {
 
   const mode   = getGradeMode(user?.grade_num)
   const config = GRADE_CONFIG[mode]
+  const questions = META_QUESTIONS[mode]
 
   const plannedMin = task?.planned_minutes ?? 0
   const actualMin  = task?.actual_minutes  ?? 0
   const diffMin    = actualMin - plannedMin
-  const diffLabel  = diffMin > 0 ? `+${diffMin}分 オーバー` : diffMin < 0 ? `${Math.abs(diffMin)}分 余った` : 'ぴったり！'
+  const diffLabel  = diffMin > 0 ? `+${diffMin}分 オーバー` : diffMin < 0 ? `${Math.abs(diffMin)}分 早かった` : 'ぴったり！'
   const diffColor  = diffMin > 5 ? 'text-red-500' : diffMin < -5 ? 'text-blue-500' : 'text-green-500'
-
-  function toggleImprovement(item: string) {
-    setImprovement(prev =>
-      prev.includes(item) ? prev.filter(i => i !== item) : [...prev, item]
-    )
-  }
 
   async function handleSave() {
     if (score === 0) return
     const xp = score >= 4 ? 20 : score >= 3 ? 10 : 5
-    if (task) { await updatePlan(task.id, {
-      see_score:   score,
-      see_comment: comment + (improvement.length > 0 ? '\n【次回の改善】' + improvement.join('、') : ''),
-    }) }
+    const metaText = questions.map(q => `${q.q}\n→ ${metaAnswers[q.id] || '（未記入）'}`).join('\n\n')
+    const fullComment = [
+      metaText,
+      nextAction ? `\n🎯 次のアクション：${NEXT_ACTIONS.find(a => a.id === nextAction)?.label ?? ''}` : '',
+      teacherMsg  ? `\n💬 先生へ：${teacherMsg}` : '',
+    ].join('')
+
+    if (task) {
+      await updatePlan(task.id, {
+        see_score:   score,
+        see_comment: fullComment,
+        is_done:     1,
+      })
+    }
     if (user) {
-      const newXp = (user.current_points ?? 0) + xp
       await saveUserFields(username, {
-        current_points: newXp,
+        current_points: (user.current_points ?? 0) + xp,
         current_status: 'idle',
       })
     }
@@ -90,7 +117,7 @@ function SeeContent() {
 
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-3">
-      <div className="text-4xl animate-bounce">🪞</div>
+      <div className="text-4xl animate-bounce">🔍</div>
       <p className="text-gray-400">読み込み中...</p>
     </div>
   )
@@ -100,17 +127,21 @@ function SeeContent() {
       <div className="text-7xl animate-bounce">🎉</div>
       <div className="bg-white rounded-3xl p-8 shadow-lg text-center space-y-3 w-full max-w-sm">
         <p className="text-2xl font-black text-gray-800">振り返り完了！</p>
-        <p className="text-yellow-500 font-bold text-xl">⚡ +{xpGained} XP ゲット！</p>
+        <p className="text-yellow-500 font-bold text-xl">⭐ +{xpGained} XP ゲット！</p>
+        <div className="bg-indigo-50 rounded-2xl p-3 text-left space-y-1">
+          <p className="text-xs font-bold text-indigo-700">📝 今日の振り返りメモ</p>
+          <p className="text-xs text-indigo-600">{metaAnswers['next_plan'] || '記録なし'}</p>
+        </div>
         <p className="text-sm text-gray-500">
           {score >= 4 ? '素晴らしい！この調子で続けよう！' :
            score >= 3 ? 'よく頑張りました！次も頑張ろう！' :
-           '難しかったね。次は改善点を意識してみよう！'}
+           '難しかったね。次は改善策を試してみよう！'}
         </p>
       </div>
       <div className="flex gap-3 w-full max-w-sm">
         <button onClick={() => router.push('/student/schedule')}
           className="flex-1 bg-blue-500 text-white py-3 rounded-2xl font-bold">
-          📅 今日のタスクへ
+          📚 今日のタスクへ
         </button>
         <button onClick={() => router.push('/student')}
           className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-2xl font-bold">
@@ -121,7 +152,7 @@ function SeeContent() {
   )
 
   return (
-    <div className={`min-h-screen pb-10 ${mode === 'high' ? 'bg-gray-950' : 'bg-gradient-to-b from-teal-50 to-green-50'}`}>
+    <div className={`min-h-screen pb-24 ${mode === 'high' ? 'bg-gray-950' : 'bg-gradient-to-b from-teal-50 to-green-50'}`}>
       <div className="max-w-2xl mx-auto px-4 py-4 space-y-4">
 
         {/* ヘッダー */}
@@ -137,128 +168,200 @@ function SeeContent() {
           )}
         </div>
 
-        {/* 予実分析（高学年・中学生のみ） */}
-        {mode !== 'low' && plannedMin > 0 && (
-          <div className={`rounded-2xl p-4 shadow-sm border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <h3 className={`font-bold text-sm mb-3 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
-              ⏱️ 時間の予実分析
-            </h3>
-            <div className="grid grid-cols-3 gap-3 text-center mb-3">
-              {[
-                { label: '予定', value: plannedMin, unit: '分', color: 'text-blue-500' },
-                { label: '実際', value: actualMin,  unit: '分', color: 'text-green-500' },
-                { label: 'ズレ', value: diffLabel,  unit: '',   color: diffColor },
-              ].map(({ label, value, unit, color }) => (
-                <div key={label} className={`rounded-xl p-3 ${mode === 'high' ? 'bg-gray-700' : 'bg-gray-50'}`}>
-                  <p className={`text-xl font-black ${color}`}>{value}<span className="text-xs">{unit}</span></p>
-                  <p className={`text-xs mt-0.5 ${mode === 'high' ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
-                </div>
-              ))}
-            </div>
-            {/* 予実バー */}
-            {plannedMin > 0 && actualMin > 0 && (
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs w-8 ${mode === 'high' ? 'text-gray-400' : 'text-gray-500'}`}>予定</span>
-                  <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
-                    <div className="h-3 bg-blue-400 rounded-full" style={{ width: '100%' }} />
-                  </div>
-                  <span className={`text-xs w-10 text-right ${mode === 'high' ? 'text-gray-400' : 'text-gray-500'}`}>{plannedMin}分</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs w-8 ${mode === 'high' ? 'text-gray-400' : 'text-gray-500'}`}>実際</span>
-                  <div className="flex-1 bg-gray-200 rounded-full h-3 overflow-hidden">
-                    <div className={`h-3 rounded-full ${diffMin > 5 ? 'bg-red-400' : diffMin < -5 ? 'bg-blue-400' : 'bg-green-400'}`}
-                      style={{ width: `${Math.min(200, Math.round((actualMin / plannedMin) * 100))}%` }} />
-                  </div>
-                  <span className={`text-xs w-10 text-right ${mode === 'high' ? 'text-gray-400' : 'text-gray-500'}`}>{actualMin}分</span>
-                </div>
+        {/* ステップインジケーター */}
+        <div className="flex items-center gap-2 px-1">
+          {[
+            { s: 1, label: mode === 'low' ? 'きもち' : '自己評価' },
+            { s: 2, label: mode === 'low' ? 'かんがえる' : 'メタ認知' },
+            { s: 3, label: mode === 'low' ? 'つぎは？' : '次の作戦' },
+          ].map(({ s, label }) => (
+            <div key={s} className="flex-1 flex flex-col items-center gap-1">
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all
+                ${step >= s ? 'bg-teal-500 text-white' : 'bg-gray-200 text-gray-400'}`}>
+                {step > s ? '✓' : s}
               </div>
-            )}
-          </div>
-        )}
-
-        {/* 自己評価スタンプ */}
-        <div className={`rounded-2xl p-4 shadow-sm border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-          <h3 className={`font-bold text-sm mb-3 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
-            {mode === 'low' ? 'きょうのべんきょうはどうだった？' : '自己評価'}
-          </h3>
-          <div className="grid grid-cols-5 gap-2">
-            {SEE_STAMPS.map(({ score: s, emoji, label, color }) => (
-              <button key={s} onClick={() => setScore(s)}
-                className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all
-                  ${score === s ? color + ' scale-105 shadow-md' : 'bg-gray-50 border-gray-200'}`}>
-                <span className="text-2xl">{emoji}</span>
-                <span className={`text-xs font-bold ${mode === 'low' ? 'text-sm' : ''}`}>{label}</span>
-              </button>
-            ))}
-          </div>
+              <span className={`text-[10px] ${step >= s ? 'text-teal-600 font-bold' : 'text-gray-400'}`}>{label}</span>
+            </div>
+          ))}
+          {[1,2].map(i => (
+            <div key={i} className={`h-0.5 flex-1 -mt-4 transition-all ${step > i ? 'bg-teal-400' : 'bg-gray-200'}`} />
+          ))}
         </div>
 
-        {/* 改善点選択（高学年・中学生） */}
-        {mode !== 'low' && score > 0 && score <= 3 && (
+        {/* ══ Step 1：自己評価スタンプ ══ */}
+        {step === 1 && (
           <div className={`rounded-2xl p-4 shadow-sm border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
-            <h3 className={`font-bold text-sm mb-3 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
-              🔧 次回の改善点（複数選択OK）
+            <h3 className={`font-bold text-sm mb-1 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
+              {mode === 'low' ? '🎯 きょうの べんきょうは どうだった？' : '🎯 今日の学習を自己評価しよう'}
             </h3>
-            <div className="flex flex-wrap gap-2">
-              {IMPROVEMENT_OPTIONS.map(item => (
-                <button key={item} onClick={() => toggleImprovement(item)}
-                  className={`px-3 py-1.5 rounded-full text-sm font-bold border transition
-                    ${improvement.includes(item)
-                      ? 'bg-indigo-500 text-white border-indigo-500'
-                      : mode === 'high' ? 'bg-gray-700 text-gray-300 border-gray-600' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
-                  {item}
+            <p className={`text-xs mb-3 ${mode === 'high' ? 'text-gray-400' : 'text-gray-400'}`}>
+              {mode === 'low' ? 'あてはまる えがおを えらんでね' : 'スタンプをタップして選んでください'}
+            </p>
+            <div className="grid grid-cols-5 gap-2 mb-4">
+              {SEE_STAMPS.map(({ score: s, emoji, label, color }) => (
+                <button key={s} onClick={() => setScore(s)}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-2xl border-2 transition-all
+                    ${score === s ? color + ' scale-105 shadow-md' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}>
+                  <span className="text-2xl">{emoji}</span>
+                  <span className="text-xs font-bold leading-tight text-center">{label}</span>
                 </button>
               ))}
             </div>
+
+            {/* 時間比較（中・高学年） */}
+            {mode !== 'low' && plannedMin > 0 && actualMin > 0 && (
+              <div className={`rounded-xl p-3 mt-2 ${mode === 'high' ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                <p className={`text-xs font-bold mb-2 ${mode === 'high' ? 'text-gray-300' : 'text-gray-600'}`}>⏱️ 時間の振り返り</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  {[
+                    { label: '予想', value: plannedMin, unit: '分', color: 'text-blue-500' },
+                    { label: '実際', value: actualMin,  unit: '分', color: 'text-green-500' },
+                    { label: 'ズレ', value: diffLabel,  unit: '',   color: diffColor },
+                  ].map(({ label, value, unit, color }) => (
+                    <div key={label} className={`rounded-lg p-2 ${mode === 'high' ? 'bg-gray-600' : 'bg-white'}`}>
+                      <p className={`text-lg font-black ${color}`}>{value}<span className="text-xs">{unit}</span></p>
+                      <p className={`text-xs ${mode === 'high' ? 'text-gray-400' : 'text-gray-500'}`}>{label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => score > 0 ? setStep(2) : null}
+              disabled={score === 0}
+              className={`w-full mt-4 py-3 rounded-2xl font-bold transition disabled:opacity-40
+                ${mode === 'low' ? 'bg-yellow-400 text-white text-lg' : 'bg-teal-500 text-white'}`}>
+              {score === 0
+                ? (mode === 'low' ? 'えらんでね 👆' : 'スタンプを選んでください')
+                : (mode === 'low' ? 'つぎへ →' : '次へ：メタ認知質問 →')}
+            </button>
           </div>
         )}
 
-        {/* 自由記述（中学生のみ） */}
-        {mode === 'high' && (
-          <div className="rounded-2xl p-4 shadow-sm border bg-gray-800 border-gray-700">
-            <h3 className="font-bold text-sm mb-2 text-white">📝 自由記述（なぜ？次はどうする？）</h3>
-            <textarea
-              value={comment}
-              onChange={e => setComment(e.target.value)}
-              placeholder="例：思ったより時間がかかった。単語を覚えるのに集中できなかった。次回は先に予習してから取り組む。"
-              className="w-full bg-gray-700 border border-gray-600 rounded-xl px-4 py-3 text-white text-sm resize-none h-24 outline-none focus:border-indigo-500 placeholder-gray-500"
-            />
+        {/* ══ Step 2：メタ認知質問（EEFエビデンス） ══ */}
+        {step === 2 && (
+          <div className="space-y-3">
+            <div className={`rounded-2xl p-3 border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-teal-50 border-teal-200'}`}>
+              <p className={`text-xs font-bold ${mode === 'high' ? 'text-teal-400' : 'text-teal-700'}`}>
+                💡 {mode === 'low' ? 'かんがえてみよう！' : '自分の学習を振り返ることで、次がもっとうまくなります'}
+              </p>
+            </div>
+
+            {questions.map((q, i) => (
+              <div key={q.id} className={`rounded-2xl p-4 shadow-sm border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+                <h3 className={`font-bold text-sm mb-2 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
+                  {i + 1}. {q.q}
+                </h3>
+                <textarea
+                  value={metaAnswers[q.id] ?? ''}
+                  onChange={e => setMetaAnswers(prev => ({ ...prev, [q.id]: e.target.value }))}
+                  placeholder={q.placeholder}
+                  rows={mode === 'low' ? 2 : 3}
+                  className={`w-full rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300
+                    ${mode === 'high'
+                      ? 'bg-gray-700 border border-gray-600 text-white placeholder-gray-500'
+                      : 'border border-gray-200 text-gray-700 placeholder-gray-300'}`}
+                />
+              </div>
+            ))}
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep(1)}
+                className={`flex-1 py-3 rounded-2xl font-bold border-2 transition
+                  ${mode === 'high' ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+                ← 戻る
+              </button>
+              <button onClick={() => setStep(3)}
+                className={`flex-2 flex-1 py-3 rounded-2xl font-bold text-white transition
+                  ${mode === 'low' ? 'bg-yellow-400' : 'bg-teal-500 hover:bg-teal-600'}`}>
+                {mode === 'low' ? 'つぎへ →' : '次へ：次の作戦 →'}
+              </button>
+            </div>
           </div>
         )}
 
-        {/* コメント（高学年のみ・簡易） */}
-        {mode === 'mid' && score > 0 && (
-          <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-            <h3 className="font-bold text-sm mb-2 text-gray-700">💬 一言メモ（任意）</h3>
-            <input
-              type="text"
-              value={comment}
-              onChange={e => setComment(e.target.value)}
-              placeholder="気づいたことを書こう"
-              className="w-full border border-gray-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-blue-400"
-            />
+        {/* ══ Step 3：次のアクション＋先生へひとこと ══ */}
+        {step === 3 && (
+          <div className="space-y-3">
+            {/* 次のアクション選択 */}
+            <div className={`rounded-2xl p-4 shadow-sm border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+              <h3 className={`font-bold text-sm mb-3 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
+                {mode === 'low' ? '🚀 つぎは なにをする？' : '🎯 次のアクションを決めよう'}
+              </h3>
+              <div className="grid grid-cols-2 gap-2">
+                {NEXT_ACTIONS.map(a => (
+                  <button key={a.id} onClick={() => setNextAction(a.id)}
+                    className={`py-2.5 px-3 rounded-xl border-2 text-sm font-bold transition
+                      ${nextAction === a.id ? a.color + ' scale-105 shadow-sm' : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-gray-300'}`}>
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 先生へのひとこと */}
+            <div className={`rounded-2xl p-4 shadow-sm border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-100'}`}>
+              <h3 className={`font-bold text-sm mb-2 ${mode === 'high' ? 'text-white' : 'text-gray-700'}`}>
+                {mode === 'low' ? '💬 せんせいへ ひとこと（なくてもOK）' : '💬 先生へひとこと（任意）'}
+              </h3>
+              <textarea
+                value={teacherMsg}
+                onChange={e => setTeacherMsg(e.target.value)}
+                placeholder={
+                  mode === 'low' ? 'たとえば：「ここが わからなかった」' :
+                  mode === 'mid' ? '例：〇〇のところが分からなかったので教えてください' :
+                  '例：〇〇の概念が理解できていないので次回解説をお願いします'
+                }
+                rows={2}
+                className={`w-full rounded-xl px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-teal-300
+                  ${mode === 'high'
+                    ? 'bg-gray-700 border border-gray-600 text-white placeholder-gray-500'
+                    : 'border border-gray-200 text-gray-700 placeholder-gray-300'}`}
+              />
+            </div>
+
+            {/* 振り返りサマリー */}
+            <div className={`rounded-2xl p-4 border ${mode === 'high' ? 'bg-gray-800 border-gray-700' : 'bg-indigo-50 border-indigo-200'}`}>
+              <p className={`text-xs font-bold mb-2 ${mode === 'high' ? 'text-indigo-400' : 'text-indigo-700'}`}>📋 今日の振り返りまとめ</p>
+              <div className="space-y-1">
+                <p className={`text-xs ${mode === 'high' ? 'text-gray-300' : 'text-gray-600'}`}>
+                  {SEE_STAMPS.find(s => s.score === score)?.emoji} 評価：{SEE_STAMPS.find(s => s.score === score)?.label}
+                </p>
+                {metaAnswers['next_plan'] && (
+                  <p className={`text-xs ${mode === 'high' ? 'text-gray-300' : 'text-gray-600'}`}>
+                    🎯 次の作戦：{metaAnswers['next_plan']}
+                  </p>
+                )}
+                {nextAction && (
+                  <p className={`text-xs ${mode === 'high' ? 'text-gray-300' : 'text-gray-600'}`}>
+                    ⚡ アクション：{NEXT_ACTIONS.find(a => a.id === nextAction)?.label}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button onClick={() => setStep(2)}
+                className={`flex-1 py-3 rounded-2xl font-bold border-2 transition
+                  ${mode === 'high' ? 'border-gray-600 text-gray-400' : 'border-gray-200 text-gray-500'}`}>
+                ← 戻る
+              </button>
+              <button onClick={handleSave}
+                className={`flex-2 flex-1 py-4 rounded-2xl font-bold text-lg shadow-md transition active:scale-95
+                  ${mode === 'low'
+                    ? 'bg-yellow-400 text-white text-xl'
+                    : mode === 'high'
+                    ? 'bg-indigo-600 text-white hover:bg-indigo-700'
+                    : 'bg-gradient-to-r from-teal-500 to-green-500 text-white'}`}>
+                {mode === 'low' ? 'きろく する 🌟' : `振り返りを保存 ⭐+${score >= 4 ? 20 : score >= 3 ? 10 : 5}XP`}
+              </button>
+            </div>
           </div>
         )}
-
-        {/* 保存ボタン */}
-        <button
-          onClick={handleSave}
-          disabled={score === 0}
-          className={`w-full py-4 rounded-2xl font-bold text-lg shadow-md transition disabled:opacity-40
-            ${mode === 'low'
-              ? 'bg-yellow-400 text-white text-xl'
-              : mode === 'high'
-              ? 'bg-indigo-600 text-white'
-              : 'bg-gradient-to-r from-teal-500 to-green-500 text-white'}`}>
-          {score === 0
-            ? (mode === 'low' ? 'スタンプをえらんでね 👆' : '評価を選んでください')
-            : (mode === 'low' ? 'きろくする！✨' : `振り返りを保存する ⚡+${score >= 4 ? 20 : score >= 3 ? 10 : 5}XP`)}
-        </button>
 
         <button onClick={() => router.back()}
-          className={`w-full py-3 rounded-2xl font-bold text-sm ${mode === 'high' ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400'}`}>
+          className={`w-full py-3 rounded-2xl font-bold text-sm ${mode === 'high' ? 'text-gray-500' : 'text-gray-400'}`}>
           ← もどる
         </button>
       </div>
@@ -270,7 +373,7 @@ export default function SeePage() {
   return (
     <Suspense fallback={
       <div className="flex flex-col items-center justify-center min-h-screen gap-3">
-        <div className="text-4xl animate-bounce">🪞</div>
+        <div className="text-4xl animate-bounce">🔍</div>
         <p className="text-gray-400">読み込み中...</p>
       </div>
     }>
