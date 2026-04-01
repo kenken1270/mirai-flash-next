@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const code = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -162,7 +164,7 @@ export default function StudentHome() {
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-4">
 
         {/* ===== マスコットカード ===== */}
-        <div className={`bg-gradient-to-r ${mascot.color} rounded-3xl p-5 shadow-lg text-white`}>
+        <div className={\`bg-gradient-to-r \${mascot.color} rounded-3xl p-5 shadow-lg text-white\`}>
           <div className="flex items-center gap-4">
             <div className="text-6xl animate-pulse">{mascot.face}</div>
             <div className="flex-1">
@@ -180,7 +182,7 @@ export default function StudentHome() {
           <div className="mt-3 flex gap-2">
             {[3,7,14,30].map(goal => (
               <div key={goal}
-                className={`flex-1 rounded-xl py-1.5 text-center text-xs font-bold ${streak >= goal ? 'bg-white text-orange-500' : 'bg-white/20 text-white/70'}`}>
+                className={\`flex-1 rounded-xl py-1.5 text-center text-xs font-bold \${streak >= goal ? 'bg-white text-orange-500' : 'bg-white/20 text-white/70'}\`}>
                 {streak >= goal ? '✅' : ''}{goal}日
               </div>
             ))}
@@ -232,7 +234,7 @@ export default function StudentHome() {
         >
           <div className="flex items-center justify-between mb-3">
             <h3 className="font-bold text-gray-700">📅 今日のタスク</h3>
-            <span className={`text-sm font-bold px-3 py-1 rounded-full ${todayPct === 100 ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}`}>
+            <span className={\`text-sm font-bold px-3 py-1 rounded-full \${todayPct === 100 ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}\`}>
               {todayDone}/{todayTotal}
             </span>
           </div>
@@ -244,12 +246,12 @@ export default function StudentHome() {
             <>
               <div className="w-full bg-gray-100 rounded-full h-5 overflow-hidden">
                 <div
-                  className={`h-5 rounded-full transition-all duration-700 ${todayPct === 100 ? 'bg-gradient-to-r from-green-400 to-emerald-400' : 'bg-gradient-to-r from-orange-400 to-yellow-300'}`}
+                  className={\`h-5 rounded-full transition-all duration-700 \${todayPct === 100 ? 'bg-gradient-to-r from-green-400 to-emerald-400' : 'bg-gradient-to-r from-orange-400 to-yellow-300'}\`}
                   style={{ width: todayPct + '%' }}
                 />
               </div>
-              <p className={`text-xs font-bold mt-1 ${todayPct === 100 ? 'text-green-500' : 'text-orange-400'}`}>
-                {todayPct === 100 ? '🎉 全部クリア！すごい！' : `あと ${todayTotal - todayDone} タスクでクリア！→`}
+              <p className={\`text-xs font-bold mt-1 \${todayPct === 100 ? 'text-green-500' : 'text-orange-400'}\`}>
+                {todayPct === 100 ? '🎉 全部クリア！すごい！' : \`あと \${todayTotal - todayDone} タスクでクリア！→\`}
               </p>
             </>
           )}
@@ -270,11 +272,11 @@ export default function StudentHome() {
                 <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
                   <div className="w-full flex flex-col justify-end" style={{ height: '56px' }}>
                     <div
-                      className={`w-full rounded-t-lg transition-all ${isToday ? 'bg-gradient-to-t from-orange-500 to-yellow-400' : d.done > 0 ? 'bg-gradient-to-t from-orange-300 to-yellow-200' : 'bg-gray-100'}`}
+                      className={\`w-full rounded-t-lg transition-all \${isToday ? 'bg-gradient-to-t from-orange-500 to-yellow-400' : d.done > 0 ? 'bg-gradient-to-t from-orange-300 to-yellow-200' : 'bg-gray-100'}\`}
                       style={{ height: barH + 'px' }}
                     />
                   </div>
-                  <span className={`text-xs ${isToday ? 'font-bold text-orange-500' : 'text-gray-300'}`}>{dayLabel}</span>
+                  <span className={\`text-xs \${isToday ? 'font-bold text-orange-500' : 'text-gray-300'}\`}>{dayLabel}</span>
                 </div>
               )
             })}
@@ -299,7 +301,7 @@ export default function StudentHome() {
           <div className="grid grid-cols-2 gap-3">
             {MENU_ITEMS.map(({ path, icon, label, color, shadow }) => (
               <button key={path} onClick={() => router.push(path)}
-                className={`bg-gradient-to-br ${color} ${shadow} shadow-lg text-white rounded-2xl p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform`}>
+                className={\`bg-gradient-to-br \${color} \${shadow} shadow-lg text-white rounded-2xl p-4 flex flex-col items-center gap-2 active:scale-95 transition-transform\`}>
                 <span className="text-4xl drop-shadow">{icon}</span>
                 <span className="font-bold text-sm drop-shadow">{label}</span>
               </button>
@@ -311,3 +313,7 @@ export default function StudentHome() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/page.tsx', code, 'utf8');
+console.log('OK');
