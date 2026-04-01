@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const code = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -219,11 +221,11 @@ export default function StudentHome() {
               <div key={d.date} className="flex-1 flex flex-col items-center gap-1">
                 <div className="w-full flex flex-col justify-end" style={{ height: '48px' }}>
                   <div
-                    className={`w-full rounded-t-md transition-all ${isToday ? 'bg-orange-400' : d.done > 0 ? 'bg-orange-200' : 'bg-gray-100'}`}
+                    className={\`w-full rounded-t-md transition-all \${isToday ? 'bg-orange-400' : d.done > 0 ? 'bg-orange-200' : 'bg-gray-100'}\`}
                     style={{ height: d.total > 0 ? Math.max(4, Math.round((d.done / maxWeek) * 48)) + 'px' : '4px' }}
                   />
                 </div>
-                <span className={`text-xs ${isToday ? 'font-bold text-orange-500' : 'text-gray-400'}`}>{dayLabel}</span>
+                <span className={\`text-xs \${isToday ? 'font-bold text-orange-500' : 'text-gray-400'}\`}>{dayLabel}</span>
               </div>
             )
           })}
@@ -249,7 +251,7 @@ export default function StudentHome() {
         <div className="grid grid-cols-2 gap-3">
           {MENU_ITEMS.map(({ path, icon, label, bg, border, text }) => (
             <button key={path} onClick={() => router.push(path)}
-              className={`${bg} ${border} ${text} border rounded-2xl p-4 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition active:scale-95`}>
+              className={\`\${bg} \${border} \${text} border rounded-2xl p-4 flex flex-col items-center gap-2 shadow-sm hover:shadow-md transition active:scale-95\`}>
               <span className="text-3xl">{icon}</span>
               <span className="font-bold text-sm">{label}</span>
             </button>
@@ -260,3 +262,7 @@ export default function StudentHome() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/page.tsx', code, 'utf8');
+console.log('OK');
