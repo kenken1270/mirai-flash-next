@@ -36,16 +36,18 @@ export default function StudentHome() {
   const [doneTasks, setDoneTasks] = useState(0)
   const [news, setNews] = useState<string>('')
   const [loading, setLoading] = useState(true)
+  const [username, setUsername] = useState('')
 
   useEffect(() => {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const username = session.user.email?.split('@')[0] ?? ''
-      console.log('DEBUG username:', username, 'email:', session.user.email)
-      const u = await loadUser(username)
+      const uname = session.user.email?.split('@')[0] ?? ''
+      setUsername(uname)
+      console.log('DEBUG username:', uname, 'email:', session.user.email)
+      const u = await loadUser(uname)
       if (u) setUser(u)
-      const allPlans = await loadPlans(username)
+      const allPlans = await loadPlans(uname)
       if (allPlans) {
         const today = new Date().toISOString().slice(0, 10)
         const todayTasks = allPlans.filter((p: PlanRow) =>
