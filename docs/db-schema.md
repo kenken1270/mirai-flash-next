@@ -22,6 +22,8 @@
 | parents | 保護者情報 | 複数 |
 | content | コンテンツ管理 | 複数 |
 
+※削除済み：flashcards（旧テーブル・2026-04-02）
+
 ---
 
 ## 主要テーブル詳細
@@ -37,7 +39,10 @@
 | streak | INT | 連続学習日数 |
 | lang | TEXT | 言語設定（ja/zh） |
 | grade_num | INT | 学年 |
+| grade_num | INT | 学年 |
 | last_login_date | TEXT | 最終ログイン日 |
+| daily_new_limit | INT | 1日の新規カード上限 |
+| pin | TEXT | PINコード |
 
 ### plans
 | カラム | 型 | 説明 |
@@ -52,9 +57,13 @@
 | task_type | TEXT | タスク種別 |
 | planned_minutes | INT | 予定時間（分） |
 | actual_minutes | INT | 実績時間（分） |
-| material_id | TEXT | 教材ID |
+| material_id | TEXT | 教材ID（TEXT型） |
 | page_range | TEXT | ページ範囲 |
 | deadline | TEXT | 締め切り |
+| see_score | INT | 振り返りスコア |
+| see_comment | TEXT | 振り返りコメント |
+| teacher_stamp | BOOL | 先生スタンプ |
+| stamp_code | TEXT | スタンプコード |
 
 ### flashcard_books（教材本マスタ）
 | カラム | 型 | 説明 |
@@ -68,10 +77,12 @@
 | cover_emoji | TEXT | 表紙絵文字 |
 | description | TEXT | 説明 |
 
-**現在登録済み教材：**
-- id=1：でる順パス単 英検4級 5訂版
-- id=2：みんなの日本語 初級1
-- id=3：でる順パス単 英検3級
+**登録済み教材：**
+| id | title | category |
+|---|---|---|
+| 1 | でる順パス単 英検4級 5訂版 | english |
+| 2 | みんなの日本語 初級1 | japanese |
+| 3 | でる順パス単 英検3級 | english |
 
 ### flashcard_sets（単語セット）
 | カラム | 型 | 説明 |
@@ -79,10 +90,10 @@
 | id | INT PK | 自動採番 |
 | book_id | INT FK | flashcard_books.id |
 | set_name | TEXT | セット名 |
-| category | TEXT | english/japanese/chinese/science等 |
-| card_type | TEXT | word/phrase/definition/qa/sentence |
+| category | TEXT | english/japanese等 |
+| card_type | TEXT | word/phrase/conversation等 |
 | subject_type | TEXT | word/phrase/conversation |
-| subject | TEXT | english/japanese/chinese等 |
+| subject | TEXT | english/japanese等 |
 | lang1_label | TEXT | 表面ラベル |
 | lang2_label | TEXT | 裏面ラベル |
 | lang3_label | TEXT | 補足ラベル |
@@ -91,25 +102,36 @@
 | question_lang | TEXT | lang1固定 |
 | answer_lang | TEXT | lang2固定 |
 
+**登録済みセット：**
+| id | set_name | book_id | category | card_type |
+|---|---|---|---|---|
+| 1 | でる順パス単 英検4級 5訂版 | 3 | english | word |
+| 2 | みんなの日本語 初級1 | 2 | japanese | word |
+| 3 | 英検3級 でる順パス単 | 1 | english | word |
+
 **カテゴリ定義：**
-- english：英語・英検
-- japanese：日本語（外国人向け）
-- chinese：中国語
-- science：理科
-- japanese_lang：国語・文法
-- math：算数・数学
-- social：社会・歴史地理
-- other：その他
+| 値 | 説明 |
+|---|---|
+| english | 英語・英検 |
+| japanese | 日本語（外国人向け） |
+| chinese | 中国語 |
+| science | 理科 |
+| japanese_lang | 国語・文法 |
+| math | 算数・数学 |
+| social | 社会・歴史地理 |
+| other | その他 |
 
 **card_type定義：**
-- word：単語暗記
-- phrase：熟語・フレーズ
-- conversation：会話表現
-- definition：用語説明
-- qa：一問一答
-- sentence：例文練習
+| 値 | 説明 |
+|---|---|
+| word | 単語暗記 |
+| phrase | 熟語・フレーズ |
+| conversation | 会話表現 |
+| definition | 用語説明（理科・国語） |
+| qa | 一問一答（歴史・地理） |
+| sentence | 例文練習 |
 
-### flashcards_v3（単語カード）
+### flashcards_v3（単語カード・メインテーブル）
 | カラム | 型 | 説明 |
 |---|---|---|
 | id | INT PK | 自動採番 |
@@ -124,37 +146,21 @@
 | lang3 | TEXT | 例文・解説 |
 | lang3_sub | TEXT | 例文訳 |
 | hint | TEXT | ヒント |
-| image_url | TEXT | 画像URL（将来実装） |
+| image_url | TEXT | 画像URL（将来実装予定） |
 | difficulty | INT | 難易度1〜5 |
 | created_by | TEXT | 作成者 |
+| created_at | TIMESTAMP | 作成日時 |
+| updated_at | TIMESTAMP | 更新日時 |
+
+**データ状況（2026-04-02時点）：**
+- 総件数：300件
+- 英語カード：235件（全件中国語訳済み）
+- 日本語カード：65件（うち11件に日本語補足説明追加済み）
+
+**※削除済みカラム（2026-04-02）：**
+tts_lang1、tts_lang2、tts_lang3、tags
 
 ---
 
 ## テーブル関係図
 
-flashcard_books
-  └── flashcard_sets（book_id）
-        └── flashcards_v3（set_id）
-              ├── review_logs（flashcard_id）
-              └── quiz_results（book_id）
-
-users
-  ├── plans（username）
-  ├── events（username）
-  ├── help_requests（username）
-  ├── review_logs（username）
-  ├── quiz_results（username）
-  └── ta_scores（username）
-
----
-
-## 変更履歴
-
-| 日付 | 内容 |
-|---|---|
-| 2026-04-02 | flashcardsテーブル削除（flashcards_v3に統合） |
-| 2026-04-02 | flashcard_setsの空セット削除（id=4〜15） |
-| 2026-04-02 | category/card_type/subject統一 |
-| 2026-04-02 | flashcards_v3の不要カラム削除（tts_lang1/2/3、tags） |
-| 2026-04-02 | 英語カード235件に中国語訳追加 |
-| 2026-04-02 | 日本語カード11件に日本語補足説明追加 |
