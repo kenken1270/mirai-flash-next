@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs'
+
+const code = `'use client'
 import { useEffect, useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -18,7 +20,7 @@ function getMonthDates(year: number, month: number): string[] {
   const dates: string[] = []
   const daysInMonth = new Date(year, month, 0).getDate()
   for (let d = 1; d <= daysInMonth; d++) {
-    dates.push(`${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`)
+    dates.push(\`\${year}-\${String(month).padStart(2,'0')}-\${String(d).padStart(2,'0')}\`)
   }
   return dates
 }
@@ -224,7 +226,7 @@ export default function PlanPage() {
         </div>
         <div className="bg-white/40 rounded-full h-2.5 overflow-hidden">
           <div className="h-full rounded-full transition-all duration-700"
-            style={{ width: `${pctAll}%`, background: '#92400E' }} />
+            style={{ width: \`\${pctAll}%\`, background: '#92400E' }} />
         </div>
         <p className="text-xs mt-1 text-right font-bold" style={{ color: '#78350F' }}>
           {doneAll}/{totalAll} ({pctAll}%)
@@ -276,7 +278,7 @@ export default function PlanPage() {
                       style={{ background: pctColor(pct) }}>{pct}%</span>
                   </div>
                   <div className="rounded-full h-2.5 overflow-hidden" style={{ background: '#FEF3C7' }}>
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pctColor(pct) }} />
+                    <div className="h-full rounded-full" style={{ width: \`\${pct}%\`, background: pctColor(pct) }} />
                   </div>
                   <p className="text-xs mt-1.5 text-right" style={{ color: '#92400E' }}>{done}/{tasks.length}完了 ›</p>
                 </button>
@@ -309,7 +311,7 @@ export default function PlanPage() {
                       style={{ background: pctColor(pct) }}>{pct}%</span>
                   </div>
                   <div className="rounded-full h-2.5 overflow-hidden" style={{ background: '#FEF3C7' }}>
-                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: pctColor(pct) }} />
+                    <div className="h-full rounded-full" style={{ width: \`\${pct}%\`, background: pctColor(pct) }} />
                   </div>
                   <p className="text-xs mt-1.5 text-right" style={{ color: '#92400E' }}>{done}/{tasks.length}完了 ›</p>
                 </button>
@@ -497,7 +499,7 @@ export default function PlanPage() {
                   </div>
                   {/* 日付グリッド */}
                   {(() => {
-                    const firstDow = new Date(`${monthYear.year}-${String(monthYear.month).padStart(2,'0')}-01T00:00:00`).getDay()
+                    const firstDow = new Date(\`\${monthYear.year}-\${String(monthYear.month).padStart(2,'0')}-01T00:00:00\`).getDay()
                     const days = monthDates
                     const cells: (string|null)[] = [...Array(firstDow).fill(null), ...days]
                     while (cells.length % 7 !== 0) cells.push(null)
@@ -524,7 +526,7 @@ export default function PlanPage() {
                               {total > 0 && (
                                 <div className="w-full mt-0.5 space-y-0.5">
                                   <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: '#FEF3C7' }}>
-                                    <div className="h-full rounded-full" style={{ width: `${Math.round(done/total*100)}%`, background: '#10B981' }} />
+                                    <div className="h-full rounded-full" style={{ width: \`\${Math.round(done/total*100)}%\`, background: '#10B981' }} />
                                   </div>
                                   <p className="text-center font-black leading-none" style={{ fontSize: '9px', color: '#92400E' }}>{total}件</p>
                                 </div>
@@ -794,3 +796,7 @@ export default function PlanPage() {
     </div>
   )
 }
+`
+
+writeFileSync('src/app/student/plan/page.tsx', code, 'utf8')
+console.log('OK')
