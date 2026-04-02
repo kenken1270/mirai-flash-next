@@ -48,7 +48,7 @@ export default function StudentHome() {
       if (allPlans) {
         const today = new Date().toISOString().slice(0, 10)
         const todayTasks = allPlans.filter((p: PlanRow) =>
-          p.task_date === today || (!p.task_date && p.is_done === 0)
+          p.task_date === today
         )
         setTasks(todayTasks)
         setDoneTasks(todayTasks.filter((p: PlanRow) => p.is_done === 1).length)
