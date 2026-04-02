@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const layout = `'use client'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -72,3 +74,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/layout.tsx', layout, 'utf8');
+console.log('OK');
