@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const page = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -221,7 +223,7 @@ export default function PlanPage() {
         </div>
         <div className="bg-white/40 rounded-full h-3 overflow-hidden">
           <div className="h-full rounded-full transition-all duration-700"
-            style={{ width: `${pctAll}%`, background: '#92400E' }} />
+            style={{ width: \`\${pctAll}%\`, background: '#92400E' }} />
         </div>
         <p className="text-xs mt-1 text-right font-bold" style={{ color: '#78350F' }}>
           {doneAll}/{totalAll} ({pctAll}%)
@@ -274,7 +276,7 @@ export default function PlanPage() {
                   </div>
                   <div className="rounded-full h-2.5 overflow-hidden" style={{ background: '#FEF3C7' }}>
                     <div className="h-full rounded-full transition-all"
-                      style={{ width: `${pct}%`, background: pctColor(pct) }} />
+                      style={{ width: \`\${pct}%\`, background: pctColor(pct) }} />
                   </div>
                   <div className="flex justify-between mt-1.5 text-xs" style={{ color: '#92400E' }}>
                     <span>{done}/{tasks.length}完了</span>
@@ -311,7 +313,7 @@ export default function PlanPage() {
                   </div>
                   <div className="rounded-full h-2.5 overflow-hidden" style={{ background: '#FEF3C7' }}>
                     <div className="h-full rounded-full transition-all"
-                      style={{ width: `${pct}%`, background: pctColor(pct) }} />
+                      style={{ width: \`\${pct}%\`, background: pctColor(pct) }} />
                   </div>
                   <div className="flex justify-between mt-1.5 text-xs" style={{ color: '#92400E' }}>
                     <span>{done}/{tasks.length}完了</span>
@@ -712,3 +714,7 @@ export default function PlanPage() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/plan/page.tsx', page, 'utf8');
+console.log('OK');
