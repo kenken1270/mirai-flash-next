@@ -42,6 +42,7 @@ export default function StudentHome() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const username = session.user.email?.split('@')[0] ?? ''
+      console.log('DEBUG username:', username, 'email:', session.user.email)
       const u = await loadUser(username)
       if (u) setUser(u)
       const allPlans = await loadPlans(username)
@@ -95,7 +96,7 @@ export default function StudentHome() {
           {/* 中央：名前・メッセージ・XPゲージ */}
           <div className="flex-1 min-w-0">
             <p className="font-black text-lg leading-tight" style={{ color: '#1C1410' }}>
-              {user?.nickname ?? user?.username ?? 'まなびびと'}さん
+              {user?.nickname || user?.username || username || 'まなびびと'}さん
             </p>
             <p className="text-sm mb-2" style={{ color: '#78350F' }}>{msg}</p>
             <div className="rounded-full h-4 w-full overflow-hidden border" style={{ background: '#FEF3C7', borderColor: '#F59E0B' }}>
