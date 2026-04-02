@@ -1,4 +1,6 @@
-'use client'
+﻿import { writeFileSync } from 'fs';
+
+const page = `'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
@@ -26,7 +28,7 @@ function getMascot(tasks: PlanRow[], done: number) {
   if (tasks.length === 0) return 'きょうはおやすみ？のんびりしよ〜'
   if (done === tasks.length) return 'ぜんぶできた！！すごすぎる！！🎉'
   if (done === 0) return 'さあはじめよう！いっしょにがんばる！'
-  return `もう${done}こできた！あとちょっと！`
+  return \`もう\${done}こできた！あとちょっと！\`
 }
 
 export default function StudentHome() {
@@ -102,7 +104,7 @@ export default function StudentHome() {
               <div
                 className="h-full rounded-full transition-all duration-700"
                 style={{
-                  width: `${(current / needed) * 100}%`,
+                  width: \`\${(current / needed) * 100}%\`,
                   background: 'linear-gradient(90deg, #B45309, #92400E)'
                 }}
               />
@@ -136,7 +138,7 @@ export default function StudentHome() {
             <div
               className="h-full rounded-full transition-all duration-700"
               style={{
-                width: `${progressPct}%`,
+                width: \`\${progressPct}%\`,
                 background: 'linear-gradient(90deg, #FCD34D, #F59E0B)',
                 minWidth: progressPct > 0 ? '1.5rem' : '0'
               }}
@@ -178,3 +180,7 @@ export default function StudentHome() {
     </div>
   )
 }
+`;
+
+writeFileSync('src/app/student/page.tsx', page, 'utf8');
+console.log('OK');
