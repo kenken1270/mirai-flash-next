@@ -1,5 +1,7 @@
 # 未来塾アプリ 開発コンテキスト
 
+最終更新：2026-04-02
+
 ## プロジェクト概要
 - アプリ名：未来塾（Mirai Juku）
 - 目的：外国籍の子ども向け学習管理アプリ
@@ -14,30 +16,37 @@
 
 ## ブランドデザイン
 - メインカラー：クリーム背景 #FFFDF0
-- ブランドイエロー：#FCD34D（ヘッダーのみ）
+- ブランドイエロー：#FCD34D（ヘッダーのみ・面積20%以下）
+- アクセント：Honey Gold #F59E0B（ボーダー・バッジ）
 - テキスト：ダークブラウン #1C1410
-- マスコット：柴犬（妻のお気に入り）
+- サブテキスト：ウォームブラウン #78350F
+- 成功：ソフトグリーン #10B981
+- マスコット：柴犬🐕（妻のお気に入り）
 - コンセプト：ゲーミフィケーション（EXP・レベル・ストリーク）
 
-## DB構造（主要テーブル）
-- users：username, nickname, current_points, streak, exp
-- plans：username, big_plan, mid_plan, task_name, task_date, is_done
-- flashcard_books：教材本マスタ（3件）
-- flashcard_sets：セット（3件：英検4級・英検3級・みんなの日本語）
-- flashcards_v3：単語カード（300件・中国語訳済み）
-- review_logs：SRS学習履歴
-- events：カレンダーイベント
-- help_requests：質問箱
-
 ## ページ構成（/student/配下）
-- /student：ホーム（HUD・柴犬・EXP表示）
-- /student/today：今日のタスク
-- /student/plan：学習プラン（大/中/小・リスト/週間/月間タブ）
-- /student/tango：単語アプリ（/flashへリダイレクト）
-- /student/calendar：カレンダー
-- /student/test：テスト
-- /student/help：質問箱
-- /flash：フラッシュカードアプリ本体
+| ルート | 説明 | 状態 |
+|---|---|---|
+| /student | ホーム（HUD・柴犬・EXP表示） | ✅ 完成 |
+| /student/today | 今日のタスク | ✅ 完成 |
+| /student/plan | 学習プラン（大/中/小・リスト/週間/月間タブ） | 🔄 更新中 |
+| /student/tango | 単語アプリ（/flashへリダイレクト） | ✅ 完成 |
+| /student/calendar | カレンダー | ✅ 完成 |
+| /student/test | テスト | ✅ 完成 |
+| /student/help | 質問箱 | ✅ 完成 |
+| /flash | フラッシュカードアプリ本体 | ✅ 完成 |
 
-## 現在の課題・作業中
-[ここに今日の作業内容を毎回追記]
+## 現在の作業状況
+- planページにリスト/週間/月間タブを追加中（rewrite_plan_v2.mjs実行済み・Vercelビルド確認待ち）
+- ヘッダー2重表示の修正が必要（layout.tsxとpage.tsxの両方にheaderがある）
+
+## AIへの指示ルール
+作業完了時は必ず以下を出力すること：
+1. 変更サマリー（何を変更したか1〜3行）
+2. db-schema.md の更新箇所
+3. ai-context.md の更新箇所
+
+出力形式：
+---DOCS UPDATE---
+[変更後のMarkdown該当箇所のみ]
+---END---
