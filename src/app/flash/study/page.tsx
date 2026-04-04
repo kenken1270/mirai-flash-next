@@ -138,6 +138,7 @@ function StudyContent() {
         }
       }
 
+      console.log("DEBUG allCards:", allCards.length, "studyQueue:", studyQueue.length, "bookId:", bookId, "setId:", setId, "startNo:", startNo, "endNo:", endNo)
       setQueue(studyQueue)
       setLoading(false)
     }
