@@ -1,7 +1,13 @@
 ﻿'use client'
+
+import { useSearchParams, useRouter } from 'next/navigation'
 import { useEffect, useState, useCallback, Suspense } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@supabase/supabase-js'
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
 
 type Card = {
   id: number
@@ -11,47 +17,44 @@ type Card = {
   lang2: string
   lang2_sub: string
   lang3: string
-  tts_lang1: string
-  tts_lang2: string
-  hint: string
+  lang3_sub: string
   set_id: number
 }
 
 type ReviewLog = {
   flashcard_id: number
+  quality: number
   ease_factor: number
   interval_days: number
   repetitions: number
   next_review_date: string
-  quality: number
 }
 
-function sm2Update(quality: number, ef: number, interval: number, reps: number) {
-  let newReps = reps
-  let newInterval = interval
-  if (quality < 3) {
-    newReps = 0
-    newInterval = 1
-  } else {
-    if (reps === 0) newInterval = 1
-    else if (reps === 1) newInterval = 6
-    else newInterval = Math.round(interval * ef)
-    newReps = reps + 1
+function sm2Update(log: ReviewLog | undefined, quality: number): ReviewLog {
+  const ef  = Math.max(1.3, (log?.ease_factor ?? 2.5) + 0.1 - (5 - quality) * 0.18)
+  const rep = quality >= 3 ? (log?.repetitions ?? 0) + 1 : 0
+  const iv  = rep <= 1 ? 1 : rep === 2 ? 6 : Math.round((log?.interval_days ?? 1) * ef)
+  const next = new Date()
+  next.setDate(next.getDate() + iv)
+  return {
+    flashcard_id: log?.flashcard_id ?? 0,
+    quality,
+    ease_factor: ef,
+    interval_days: iv,
+    repetitions: rep,
+    next_review_date: next.toISOString().split('T')[0],
   }
-  let newEf = ef + (0.1 - (5 - quality) * (0.08 + 0.02 * (5 - quality)))
-  newEf = Math.max(1.3, newEf)
-  const nextDate = new Date(Date.now() + newInterval * 86400000).toISOString().split('T')[0]
-  return { newEf, newInterval, newReps, nextDate }
 }
 
 function StudyContent() {
-  const router = useRouter()
   const searchParams = useSearchParams()
-  const setId    = Number(searchParams.get('id') ?? searchParams.get('setId') ?? 0)
-  const bookId   = Number(searchParams.get('bookId') ?? 0)
-  const setName  = decodeURIComponent(searchParams.get('setName') ?? '蜊倩ｪ槫ｭｦ鄙・)
-  const startNo  = parseInt(searchParams.get('start') ?? '1')
-  const endNo    = parseInt(searchParams.get('end')   ?? '9999')
+  const router       = useRouter()
+
+  const setId   = Number(searchParams.get('id') ?? searchParams.get('setId') ?? 0)
+  const bookId  = Number(searchParams.get('bookId') ?? 0)
+  const setName = decodeURIComponent(searchParams.get('setName') ?? '')
+  const startNo = Number(searchParams.get('start') ?? 1)
+  const endNo   = Number(searchParams.get('end')   ?? 9999)
 
   const [username,   setUsername]   = useState('')
   const [queue,      setQueue]      = useState<Card[]>([])
@@ -62,8 +65,8 @@ function StudyContent() {
   const [phase,      setPhase]      = useState<'study'|'result'>('study')
   const [results,    setResults]    = useState<{card: Card; quality: number}[]>([])
   const [saving,     setSaving]     = useState(false)
-  const [lang1Label, setLang1Label] = useState('陦ｨ髱｢')
-  const [lang2Label, setLang2Label] = useState('諢丞袖')
+  const [lang1Label, setLang1Label] = useState('おもて')
+  const [lang2Label, setLang2Label] = useState('いみ')
   const [ttsLang1,   setTtsLang1]   = useState('en-US')
   const [ttsLang2,   setTtsLang2]   = useState('ja-JP')
   const [autoSpeak,  setAutoSpeak]  = useState(true)
@@ -72,40 +75,44 @@ function StudyContent() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal','') ?? ''
+      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
       setUsername(uname)
 
-      // bookId がある場合は book 全体、ない場合は set_id 単体で取得
       let query = supabase.from('flashcards_v3')
-        .select('id,item_no,lang1,lang1_sub,lang2,lang2_sub,lang3,tts_lang1,tts_lang2,hint,set_id')
+        .select('id,item_no,lang1,lang1_sub,lang2,lang2_sub,lang3,lang3_sub,set_id')
         .order('item_no')
+
       if (bookId) {
-        const { data: sets } = await supabase.from('flashcard_sets').select('id').eq('book_id', bookId)
+        const { data: sets } = await supabase
+          .from('flashcard_sets').select('id').eq('book_id', bookId)
         if (sets && sets.length > 0) {
-          query = query.in('set_id', sets.map((s: {id: number}) => s.id))
+          query = query.in('set_id', sets.map((s: { id: number }) => s.id))
         }
       } else if (setId) {
         query = query.eq('set_id', setId)
       }
-      if (startNo > 1)    query = query.gte('item_no', startNo)
-      if (endNo < 9999)   query = query.lte('item_no', endNo)
 
-      const [cardsRes, logsRes, setRes, userRes] = await Promise.all([
-        query,
-        supabase.from('review_logs').select('*').eq('username', uname),
-        supabase.from('flashcard_sets').select('lang1_label,lang2_label,lang1_tts_lang,lang2_tts_lang,tts_lang').eq('id', setId).limit(1),
-        supabase.from('users').select('base_daily_limit,lang').eq('username', uname).limit(1),
-      ])
+      if (startNo > 1)   query = query.gte('item_no', startNo)
+      if (endNo < 9999)  query = query.lte('item_no', endNo)
 
-      const allCards: Card[] = cardsRes.data ?? []
-      const allLogs: ReviewLog[] = logsRes.data ?? []
+      const cardsRes = await query
+      const logsRes  = await supabase.from('review_logs').select('*').eq('username', uname)
+      const setRes   = await supabase.from('flashcard_sets')
+        .select('lang1_label,lang2_label').eq('id', setId).limit(1)
+      const userRes  = await supabase.from('users')
+        .select('base_daily_limit').eq('username', uname).limit(1)
+
+      const allCards: Card[]      = cardsRes.data ?? []
+      const allLogs:  ReviewLog[] = logsRes.data  ?? []
 
       if (setRes.data?.[0]) {
         const s = setRes.data[0]
-        setLang1Label(s.lang1_label ?? '陦ｨ髱｢')
-        setLang2Label(s.lang2_label ?? '諢丞袖')
-        setTtsLang1(s.lang1_tts_lang ?? s.tts_lang ?? 'en-US')
-        setTtsLang2(s.lang2_tts_lang ?? 'ja-JP')
+        setLang1Label(s.lang1_label ?? 'おもて')
+        setLang2Label(s.lang2_label ?? 'いみ')
+        const langMap: Record<string, string> = {
+          '英語': 'en-US', '中国語': 'zh-CN', '日本語': 'ja-JP'
+        }
+        setTtsLang1(langMap[s.lang1_label] ?? 'en-US')
       }
 
       const logMap = new Map<number, ReviewLog>()
@@ -116,78 +123,74 @@ function StudyContent() {
       const limit = userRes.data?.[0]?.base_daily_limit ?? 20
 
       let studyQueue: Card[]
-      if (startNo > 1 || endNo < 9999) {
+      if (startNo > 1 || endNo < 9999 || bookId) {
         studyQueue = [...allCards].sort(() => Math.random() - 0.5)
       } else {
-        const newCards  = allCards.filter(c => !logMap.has(c.id)).slice(0, limit)
-        const dueCards  = allCards.filter(c => {
+        const newCards = allCards.filter(c => !logMap.has(c.id)).slice(0, limit)
+        const dueCards = allCards.filter(c => {
           const log = logMap.get(c.id)
           return log && log.next_review_date <= today
         })
         studyQueue = [...newCards, ...dueCards].sort(() => Math.random() - 0.5)
+        if (studyQueue.length === 0) {
+          studyQueue = [...allCards].sort(() => Math.random() - 0.5)
+        }
       }
 
       setQueue(studyQueue)
       setLoading(false)
     }
     init()
-  }, [setId, startNo, endNo, router])
+  }, [setId, bookId, startNo, endNo, router])
 
   const speak = useCallback((text: string, lang: string) => {
     if (!text || typeof window === 'undefined' || !window.speechSynthesis) return
     window.speechSynthesis.cancel()
     const utter = new SpeechSynthesisUtterance(text)
-    utter.lang  = lang
-    utter.rate  = 0.85
+    utter.lang   = lang
+    utter.rate   = 0.85
     utter.volume = 1.0
     window.speechSynthesis.speak(utter)
   }, [])
 
-  // 繧ｫ繝ｼ繝峨′螟峨ｏ縺｣縺溘ｉ閾ｪ蜍輔〒 lang1 繧定ｪｭ縺ｿ荳翫￡
   useEffect(() => {
     if (!loading && autoSpeak && queue.length > 0 && !showAnswer && phase === 'study') {
       const card = queue[current]
       if (card) {
-        const t = setTimeout(() => speak(card.lang1, card.tts_lang1 || ttsLang1), 400)
+        const t = setTimeout(() => speak(card.lang1, ttsLang1), 400)
         return () => clearTimeout(t)
       }
     }
-  }, [current, loading, showAnswer, phase, autoSpeak])
+  }, [current, loading, autoSpeak, showAnswer, phase, queue, speak, ttsLang1])
 
-  async function saveReview(card: Card, quality: number) {
-    const existing  = logs.get(card.id)
-    const ef        = existing?.ease_factor    ?? 2.5
-    const interval  = existing?.interval_days  ?? 1
-    const reps      = existing?.repetitions    ?? 0
-    const { newEf, newInterval, newReps, nextDate } = sm2Update(quality, ef, interval, reps)
-
-    const data = {
-      username,
-      flashcard_id: card.id,
-      quality,
-      ease_factor:      newEf,
-      interval_days:    newInterval,
-      repetitions:      newReps,
-      next_review_date: nextDate,
-    }
-    if (existing) {
-      await supabase.from('review_logs').update(data).eq('username', username).eq('flashcard_id', card.id)
-    } else {
-      await supabase.from('review_logs').insert(data)
-    }
-    const xpGain = quality >= 4 ? 5 : quality >= 3 ? 3 : 1
-    const { data: userData } = await supabase.from('users').select('current_points').eq('username', username).limit(1)
-    if (userData?.[0]) {
-      await supabase.from('users').update({ current_points: (userData[0].current_points ?? 0) + xpGain }).eq('username', username)
-    }
-  }
-
-  async function handleQuality(quality: number) {
+  const handleQuality = useCallback(async (quality: number) => {
     if (saving) return
     setSaving(true)
     const card = queue[current]
     setResults(prev => [...prev, { card, quality }])
-    await saveReview(card, quality)
+
+    const existing = logs.get(card.id)
+    const updated  = sm2Update(existing ? { ...existing, flashcard_id: card.id } : undefined, quality)
+    await supabase.from('review_logs').upsert({
+      username,
+      flashcard_id:     card.id,
+      quality:          updated.quality,
+      ease_factor:      updated.ease_factor,
+      interval_days:    updated.interval_days,
+      repetitions:      updated.repetitions,
+      next_review_date: updated.next_review_date,
+      reviewed_at:      new Date().toISOString(),
+    }, { onConflict: 'username,flashcard_id' })
+
+    const xpGain = quality >= 4 ? 5 : quality >= 3 ? 3 : 1
+    const { data: userData } = await supabase.from('users')
+      .select('current_points').eq('username', username).limit(1)
+    if (userData?.[0]) {
+      await supabase.from('users')
+        .update({ current_points: (userData[0].current_points ?? 0) + xpGain })
+        .eq('username', username)
+    }
+
     if (current + 1 >= queue.length) {
       setPhase('result')
     } else {
@@ -195,219 +198,268 @@ function StudyContent() {
       setShowAnswer(false)
     }
     setSaving(false)
-  }
+  }, [saving, queue, current, logs, username])
 
+  // ローディング
   if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-3">
-      <div className="text-5xl animate-bounce">ワ</div>
-      <p className="text-gray-400">隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</p>
+    <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#FFFDF0]">
+      <div className="text-5xl animate-bounce">🃏</div>
+      <p className="text-gray-400">よみこみちゅう...</p>
     </div>
   )
 
+  // カードが0件
   if (queue.length === 0) return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-4 px-6">
-      <div className="text-6xl">脂</div>
-      <h2 className="text-xl font-bold text-gray-700">莉頑律縺ｮ蟄ｦ鄙偵・螳御ｺ・ｼ・/h2>
-      <p className="text-gray-400 text-center">縺ｾ縺滓・譌･繝√Ε繝ｬ繝ｳ繧ｸ縺励ｈ縺・/p>
+    <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#FFFDF0] px-6">
+      <div className="text-6xl">🎉</div>
+      <h2 className="text-2xl font-bold text-gray-700">今日の学習は完了！</h2>
+      <p className="text-gray-400">また明日チャレンジしよう</p>
       <button onClick={() => router.back()}
-        className="px-6 py-3 bg-indigo-500 text-white rounded-2xl font-bold hover:bg-indigo-600 transition">
-        竊・謌ｻ繧・      </button>
+        className="mt-4 px-6 py-3 bg-yellow-400 text-white rounded-full font-bold shadow">
+        戻る
+      </button>
     </div>
   )
 
-  // 邨先棡逕ｻ髱｢
+  // 結果画面
   if (phase === 'result') {
     const perfect = results.filter(r => r.quality === 5).length
-    const good    = results.filter(r => r.quality === 4).length
-    const ok      = results.filter(r => r.quality === 3).length
-    const ng      = results.filter(r => r.quality  < 3).length
+    const good    = results.filter(r => r.quality >= 3 && r.quality < 5).length
+    const ng      = results.filter(r => r.quality < 3).length
     const total   = results.length
-    const acc     = total > 0 ? Math.round(((perfect + good + ok) / total) * 100) : 0
+    const acc     = total > 0 ? Math.round(((perfect + good) / total) * 100) : 0
+
+    const ngCards   = results.filter(r => r.quality < 3).map(r => r.card)
+    const goodCards = results.filter(r => r.quality >= 3).map(r => r.card)
+
     return (
-      <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-purple-50 flex flex-col items-center justify-center px-6 gap-6">
-        <div className="text-6xl">{acc >= 80 ? '醇' : acc >= 60 ? '総' : '潮'}</div>
-        <h2 className="text-2xl font-bold text-gray-800">蟄ｦ鄙貞ｮ御ｺ・ｼ・/h2>
-        <div className="bg-white rounded-2xl shadow p-6 w-full max-w-sm space-y-3">
-          <div className="text-center">
-            <p className="text-4xl font-bold text-indigo-600">{acc}%</p>
-            <p className="text-sm text-gray-400 mt-1">豁｣隗｣邇・ｼ・total}蝠擾ｼ・/p>
+      <div className="min-h-screen bg-[#FFFDF0] pb-24">
+        {/* ヘッダー */}
+        <div className="bg-yellow-400 px-4 py-4 shadow sticky top-0 z-10">
+          <h1 className="text-xl font-bold text-gray-900 text-center">📊 学習結果</h1>
+        </div>
+
+        <div className="max-w-lg mx-auto px-4 py-6 space-y-5">
+
+          {/* スコアカード */}
+          <div className="bg-white rounded-3xl shadow-md p-6 text-center border-2 border-yellow-200">
+            <div className="text-6xl mb-2">{acc >= 80 ? '🏆' : acc >= 60 ? '👍' : '💪'}</div>
+            <p className="text-5xl font-bold text-yellow-500">{acc}%</p>
+            <p className="text-gray-400 mt-1 text-sm">{total}問中 {perfect + good}問 正解</p>
+
+            {/* 内訳バッジ */}
+            <div className="grid grid-cols-3 gap-3 mt-5">
+              <div className="bg-green-50 rounded-2xl p-3 border border-green-100">
+                <p className="text-2xl font-bold text-green-500">{perfect}</p>
+                <p className="text-xs text-gray-500 mt-1">🌟 バッチリ</p>
+              </div>
+              <div className="bg-yellow-50 rounded-2xl p-3 border border-yellow-100">
+                <p className="text-2xl font-bold text-yellow-500">{good}</p>
+                <p className="text-xs text-gray-500 mt-1">👌 なんとか</p>
+              </div>
+              <div className="bg-red-50 rounded-2xl p-3 border border-red-100">
+                <p className="text-2xl font-bold text-red-400">{ng}</p>
+                <p className="text-xs text-gray-500 mt-1">😅 もう一度</p>
+              </div>
+            </div>
           </div>
-          <div className="grid grid-cols-4 gap-2 text-center text-sm">
-            <div className="bg-green-50 rounded-xl p-2"><p className="font-bold text-green-600">{perfect}</p><p className="text-xs text-gray-400">螳檎挑</p></div>
-            <div className="bg-blue-50 rounded-xl p-2"><p className="font-bold text-blue-600">{good}</p><p className="text-xs text-gray-400">豁｣隗｣</p></div>
-            <div className="bg-yellow-50 rounded-xl p-2"><p className="font-bold text-yellow-600">{ok}</p><p className="text-xs text-gray-400">縺ｾ縺ゅ∪縺・/p></div>
-            <div className="bg-red-50 rounded-xl p-2"><p className="font-bold text-red-600">{ng}</p><p className="text-xs text-gray-400">隕∝ｾｩ鄙・/p></div>
+
+          {/* できなかった単語リスト */}
+          {ngCards.length > 0 && (
+            <div className="bg-white rounded-3xl shadow-md p-5 border-2 border-red-100">
+              <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                <span className="text-lg">😅</span> もう一度おぼえよう
+                <span className="ml-auto bg-red-100 text-red-500 text-xs font-bold px-2 py-0.5 rounded-full">{ngCards.length}語</span>
+              </h3>
+              <div className="space-y-2">
+                {ngCards.map(card => (
+                  <div key={card.id} className="flex items-center gap-3 bg-red-50 rounded-2xl px-4 py-3">
+                    <span className="text-base font-bold text-gray-800 flex-1">{card.lang1}</span>
+                    {card.lang1_sub && <span className="text-xs text-gray-400">{card.lang1_sub}</span>}
+                    <span className="text-sm text-red-400 font-bold">{card.lang2}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* できた単語リスト */}
+          {goodCards.length > 0 && (
+            <div className="bg-white rounded-3xl shadow-md p-5 border-2 border-green-100">
+              <h3 className="font-bold text-gray-700 mb-3 flex items-center gap-2">
+                <span className="text-lg">✅</span> おぼえた単語
+                <span className="ml-auto bg-green-100 text-green-600 text-xs font-bold px-2 py-0.5 rounded-full">{goodCards.length}語</span>
+              </h3>
+              <div className="space-y-2">
+                {goodCards.map(card => (
+                  <div key={card.id} className="flex items-center gap-3 bg-green-50 rounded-2xl px-4 py-3">
+                    <span className="text-base font-bold text-gray-800 flex-1">{card.lang1}</span>
+                    {card.lang1_sub && <span className="text-xs text-gray-400">{card.lang1_sub}</span>}
+                    <span className="text-sm text-green-600 font-bold">{card.lang2}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 積み重ねメッセージ */}
+          <div className="bg-yellow-50 rounded-3xl p-5 border-2 border-yellow-200 text-center">
+            <p className="text-2xl mb-1">🐕</p>
+            <p className="text-sm text-gray-600 font-bold">
+              {acc >= 80
+                ? 'すごい！この調子で続けよう！'
+                : acc >= 60
+                ? 'いい感じ！もう一回やると完璧だよ！'
+                : '大丈夫！くり返せばかならず覚えられる！'}
+            </p>
+            <p className="text-xs text-gray-400 mt-2">
+              今日 +{results.filter(r => r.quality >= 4).length * 5 + results.filter(r => r.quality === 3).length * 3 + results.filter(r => r.quality < 3).length} EXP 獲得！
+            </p>
           </div>
         </div>
-        <div className="flex gap-3 w-full max-w-sm">
+
+        {/* 下部ボタン */}
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 p-4 flex gap-3 max-w-lg mx-auto">
           <button onClick={() => router.back()}
-            className="flex-1 py-3 bg-white border border-gray-200 text-gray-600 rounded-2xl font-bold hover:bg-gray-50 transition">
-            竊・謌ｻ繧・          </button>
+            className="flex-1 py-3 bg-white border-2 border-gray-200 rounded-2xl font-bold text-gray-500 text-sm">
+            一覧に戻る
+          </button>
           <button onClick={() => { setCurrent(0); setShowAnswer(false); setPhase('study'); setResults([]) }}
-            className="flex-1 py-3 bg-indigo-500 text-white rounded-2xl font-bold hover:bg-indigo-600 transition">
-            煤 繧ゅ≧荳蠎ｦ
+            className="flex-1 py-3 bg-yellow-400 rounded-2xl font-bold text-gray-900 text-sm shadow">
+            🔄 もう一度
+          </button>
+          <button onClick={() => router.push('/student')}
+            className="flex-1 py-3 bg-gray-800 text-white rounded-2xl font-bold text-sm shadow">
+            🏠 ホーム
           </button>
         </div>
       </div>
     )
   }
 
-  const card = queue[current]
-  const progress = ((current) / queue.length) * 100
+  // 学習画面
+  const card     = queue[current]
+  const progress = Math.round((current / queue.length) * 100)
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-purple-50 flex flex-col">
-
-      {/* 繝倥ャ繝繝ｼ */}
-      <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-3 shadow-lg">
-        <div className="max-w-lg mx-auto">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs opacity-80">
-              {startNo === 1 && endNo === 9999 ? setName : `${startNo}縲・{endNo}逡ｪ | ${setName}`}
-            </span>
-            <div className="flex items-center gap-3">
-              {/* 閾ｪ蜍戊ｪｭ縺ｿ荳翫￡繝医げ繝ｫ */}
-              <button onClick={() => setAutoSpeak(v => !v)}
-                className={`text-xs px-2 py-1 rounded-full transition ${autoSpeak ? 'bg-white/30' : 'bg-white/10 opacity-60'}`}>
-                {autoSpeak ? '矧 閾ｪ蜍桧N' : '這 閾ｪ蜍桧FF'}
-              </button>
-              <button onClick={() => router.back()}
-                className="text-xs bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">
-                荳ｭ譁ｭ
-              </button>
-            </div>
-          </div>
-          {/* 繝励Ο繧ｰ繝ｬ繧ｹ繝舌・ */}
-          <div className="flex items-center gap-2">
-            <div className="flex-1 bg-white/30 rounded-full h-2">
-              <div className="bg-yellow-300 h-2 rounded-full transition-all duration-500"
-                style={{ width: `${progress}%` }} />
-            </div>
-            <span className="text-xs font-bold">{current + 1}/{queue.length}</span>
-          </div>
+    <div className="min-h-screen bg-[#FFFDF0] flex flex-col">
+      {/* ヘッダー */}
+      <div className="bg-yellow-400 px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow">
+        <button onClick={() => router.back()} className="text-2xl">←</button>
+        <div className="flex-1">
+          <p className="text-xs text-yellow-800 opacity-80">
+            {setName || (startNo > 1 || endNo < 9999 ? `${startNo}〜${endNo}番` : '単語学習')}
+          </p>
+          <p className="text-sm font-bold text-gray-900">{current + 1} / {queue.length}</p>
         </div>
-      </header>
+        <button onClick={() => setAutoSpeak(v => !v)}
+          className={`text-xs px-3 py-1.5 rounded-full border border-yellow-600 font-bold ${autoSpeak ? 'bg-yellow-600 text-white' : 'bg-white text-yellow-700'}`}>
+          {autoSpeak ? '🔊 ON' : '🔇 OFF'}
+        </button>
+      </div>
 
-      {/* 繧ｫ繝ｼ繝峨お繝ｪ繧｢ */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-6 gap-4">
+      {/* プログレスバー */}
+      <div className="w-full bg-yellow-100 h-2">
+        <div className="bg-yellow-400 h-2 transition-all duration-500" style={{ width: `${progress}%` }} />
+      </div>
+
+      {/* カード */}
+      <div className="flex-1 flex flex-col items-center justify-center p-5 gap-4">
         <div className="w-full max-w-lg">
-
-          {/* 蝠城｡後き繝ｼ繝・*/}
-          <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-8 min-h-[220px] flex flex-col items-center justify-center gap-3 relative">
-
-            {/* 蝠城｡後Λ繝吶Ν */}
-            <span className="absolute top-4 left-5 text-xs text-gray-400 font-bold">{lang1Label}</span>
-
-            {/* 逡ｪ蜿ｷ */}
-            <span className="absolute top-4 right-5 text-xs text-gray-300">No.{card.item_no}</span>
-
-            {/* 蜊倩ｪ・*/}
-            <p className="text-4xl font-bold text-gray-800 text-center leading-tight">{card.lang1}</p>
-
-            {/* 逋ｺ髻ｳ險伜捷 */}
+          {/* 表面カード */}
+          <div className="bg-white rounded-3xl shadow-lg border-2 border-yellow-100 p-8 min-h-[200px] flex flex-col items-center justify-center gap-3 relative">
+            <span className="absolute top-4 left-5 text-xs text-gray-300 font-bold uppercase">{lang1Label}</span>
+            <span className="absolute top-4 right-5 text-xs text-gray-200">No.{card.item_no}</span>
+            <p className="text-4xl font-bold text-gray-800 text-center leading-snug">{card.lang1}</p>
             {card.lang1_sub && (
-              <p className="text-base text-indigo-400 font-mono">{card.lang1_sub}</p>
+              <p className="text-base text-yellow-600 font-mono">{card.lang1_sub}</p>
             )}
-
-            {/* 繝偵Φ繝・*/}
-            {card.hint && (
-              <span className="text-xs bg-amber-50 text-amber-500 px-3 py-1 rounded-full border border-amber-200">
-                庁 {card.hint}
-              </span>
-            )}
-
-            {/* 矧 蝠城｡碁擇縺ｮ髻ｳ螢ｰ繝懊ち繝ｳ */}
-            <button
-              onClick={() => speak(card.lang1, card.tts_lang1 || ttsLang1)}
-              className="mt-2 w-12 h-12 rounded-full bg-indigo-100 hover:bg-indigo-200 flex items-center justify-center transition shadow-sm">
-              <span className="text-xl">矧</span>
+            <button onClick={() => speak(card.lang1, ttsLang1)}
+              className="mt-1 w-10 h-10 rounded-full bg-yellow-100 hover:bg-yellow-200 flex items-center justify-center transition">
+              <span className="text-lg">🔊</span>
             </button>
           </div>
 
-          {/* 遲斐∴繧ｫ繝ｼ繝・*/}
+          {/* 答え表示エリア */}
           {showAnswer && (
-            <div className="bg-gradient-to-br from-purple-50 to-indigo-50 rounded-3xl shadow-lg border border-purple-100 p-6 mt-4 flex flex-col items-center gap-3">
+            <div className="bg-yellow-50 rounded-3xl shadow border-2 border-yellow-200 p-6 mt-4 flex flex-col items-center gap-3">
+              <span className="text-xs text-yellow-600 font-bold self-start">{lang2Label}</span>
 
-              <span className="text-xs text-purple-400 font-bold self-start">{lang2Label}</span>
-
-              {/* 諢丞袖 */}
-              <p className="text-2xl font-bold text-gray-800 text-center">{card.lang2}</p>
-
-              {/* 隱ｭ縺ｿ莉ｮ蜷・*/}
+              {/* 日本語訳 */}
+              <div className="w-full bg-white rounded-2xl px-5 py-3 border border-yellow-100 text-center">
+                <p className="text-xs text-gray-400 mb-1">🇯🇵 日本語</p>
+                <p className="text-2xl font-bold text-gray-800">{card.lang2}</p>
+              </div>
+              {/* lang2_sub：中国語教材→中国語表示、英語/日本語教材→よみかた表示 */}
               {card.lang2_sub && (
-                <p className="text-sm text-purple-400">{card.lang2_sub}</p>
+                ttsLang1 === 'zh-CN'
+                  ? <div className="w-full bg-red-50 rounded-2xl px-5 py-2 border border-red-100 text-center">
+                      <p className="text-xs text-gray-400 mb-0.5">🇨🇳 中国語</p>
+                      <p className="text-xl font-bold text-red-700">{card.lang2_sub}</p>
+                    </div>
+                  : <div className="w-full bg-yellow-50 rounded-2xl px-5 py-2 border border-yellow-100 text-center">
+                      <p className="text-xs text-gray-400 mb-0.5">🔤 よみかた</p>
+                      <p className="text-base text-yellow-700 font-mono tracking-wide">{card.lang2_sub}</p>
+                    </div>
               )}
 
-              {/* 萓区枚 */}
-              {card.lang3 && (
-                <div className="bg-white/70 rounded-2xl px-4 py-2 w-full">
-                  <p className="text-sm text-gray-600 text-center">{card.lang3}</p>
+              {/* 中国語訳: lang3_subに入っている（英検4級・3級共通） */}
+              {card.lang3_sub && ttsLang1 !== 'zh-CN' && (
+                <div className="w-full bg-red-50 rounded-2xl px-5 py-2 border border-red-100 text-center">
+                  <p className="text-xs text-gray-400 mb-0.5">🇨🇳 中国語</p>
+                  <p className="text-xl font-bold text-red-700">{card.lang3_sub}</p>
                 </div>
               )}
 
-              {/* 矧 遲斐∴髱｢縺ｮ髻ｳ螢ｰ繝懊ち繝ｳ鄒､ */}
+              {/* 例文 */}
+              {card.lang3 && (
+                <div className="bg-white/80 rounded-2xl px-4 py-2 w-full">
+                  <p className="text-xs text-gray-400 mb-1">📝 例文</p>
+                  <p className="text-sm text-gray-500 text-center italic">{card.lang3}</p>
+                </div>
+              )}
               <div className="flex gap-3 mt-1">
-                <button
-                  onClick={() => speak(card.lang1, card.tts_lang1 || ttsLang1)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-indigo-100 hover:bg-indigo-200 rounded-full transition text-sm font-bold text-indigo-600">
-                  矧 {lang1Label}
+                <button onClick={() => speak(card.lang1, ttsLang1)}
+                  className="flex items-center gap-1 px-4 py-2 bg-yellow-200 hover:bg-yellow-300 rounded-full text-sm font-bold text-yellow-800 transition">
+                  🔊 {lang1Label}
                 </button>
-                <button
-                  onClick={() => speak(card.lang2, card.tts_lang2 || ttsLang2)}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-purple-100 hover:bg-purple-200 rounded-full transition text-sm font-bold text-purple-600">
-                  矧 {lang2Label}
+                <button onClick={() => speak(card.lang2, ttsLang2)}
+                  className="flex items-center gap-1 px-4 py-2 bg-yellow-100 hover:bg-yellow-200 rounded-full text-sm font-bold text-yellow-700 transition">
+                  🔊 {lang2Label}
                 </button>
               </div>
-
             </div>
-          )}
-
-          {/* 繝偵Φ繝医ユ繧ｭ繧ｹ繝・*/}
-          {!showAnswer && (
-            <p className="text-center text-xs text-gray-400 mt-4">
-              眺 諢丞袖繧帝ｭ縺ｫ諤昴＞豬ｮ縺九∋縺ｦ縺九ｉ謚ｼ縺励※縺ｭ
-            </p>
           )}
         </div>
       </div>
 
-      {/* 繝懊ち繝ｳ繧ｨ繝ｪ繧｢ */}
+      {/* ボタンエリア */}
       <div className="px-4 pb-8 max-w-lg mx-auto w-full space-y-3">
         {!showAnswer ? (
-          <button
-            onClick={() => setShowAnswer(true)}
-            className="w-full py-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-2xl font-bold text-lg shadow-lg hover:opacity-90 transition">
-            剥 遲斐∴繧定ｦ九ｋ
+          <button onClick={() => { setShowAnswer(true); speak(card.lang2, ttsLang2) }}
+            className="w-full py-4 bg-yellow-400 text-gray-900 rounded-2xl font-bold text-xl shadow-lg hover:bg-yellow-500 transition">
+            💡 こたえを見る
           </button>
         ) : (
           <div className="space-y-2">
-            <p className="text-center text-xs text-gray-400 font-bold">縺ｩ縺ｮ縺上ｉ縺・ｦ壹∴縺ｦ縺・◆・・/p>
+            <p className="text-center text-xs text-gray-400 font-bold mb-1">どのくらい覚えていた？</p>
             <div className="grid grid-cols-1 gap-2">
-              <button onClick={() => handleQuality(5)} disabled={saving}
-                className="py-3.5 bg-green-500 text-white rounded-2xl font-bold hover:bg-green-600 transition disabled:opacity-50 flex flex-col items-center">
-                <span className="text-base">笞｡ 縺吶＄縺ｫ繧上°縺｣縺・/span>
-                <span className="text-xs opacity-80 font-normal mt-0.5">隕九◆迸ｬ髢薙↓諢丞袖縺悟・縺ｦ縺阪◆</span>
-              </button>
-              <button onClick={() => handleQuality(4)} disabled={saving}
-                className="py-3.5 bg-blue-500 text-white rounded-2xl font-bold hover:bg-blue-600 transition disabled:opacity-50 flex flex-col items-center">
-                <span className="text-base">､・蟆代＠閠・∴縺溘ｉ繧上°縺｣縺・/span>
-                <span className="text-xs opacity-80 font-normal mt-0.5">謨ｰ遘定・∴繧後・諤昴＞蜃ｺ縺帙◆</span>
-              </button>
-              <button onClick={() => handleQuality(3)} disabled={saving}
-                className="py-3.5 bg-yellow-500 text-white rounded-2xl font-bold hover:bg-yellow-600 transition disabled:opacity-50 flex flex-col items-center">
-                <span className="text-base">・ 譎る俣縺後°縺九▲縺・/span>
-                <span className="text-xs opacity-80 font-normal mt-0.5">縺九↑繧願・∴縺ｦ繧・▲縺ｨ諤昴＞蜃ｺ縺励◆</span>
-              </button>
-              <button onClick={() => handleQuality(0)} disabled={saving}
-                className="py-3.5 bg-red-500 text-white rounded-2xl font-bold hover:bg-red-600 transition disabled:opacity-50 flex flex-col items-center">
-                <span className="text-base">笶・諤昴＞蜃ｺ縺帙↑縺九▲縺・/span>
-                <span className="text-xs opacity-80 font-normal mt-0.5">繧上°繧峨↑縺九▲縺溘・隕壹∴縺ｦ縺・↑縺九▲縺・/span>
-              </button>
+              {[
+                { q: 5, label: '🌟 バッチリ！',    sub: '見た瞬間に答えが出てきた',  color: 'bg-green-400 hover:bg-green-500'  },
+                { q: 3, label: '👌 なんとか…',     sub: '少し考えたら思い出せた',     color: 'bg-yellow-400 hover:bg-yellow-500'},
+                { q: 1, label: '😓 むずかしい',    sub: 'かなり考えてやっと出てきた', color: 'bg-orange-400 hover:bg-orange-500'},
+                { q: 0, label: '😅 わからなかった', sub: '全然思い出せなかった',       color: 'bg-red-400 hover:bg-red-500'     },
+              ].map(({ q, label, sub, color }) => (
+                <button key={q} onClick={() => handleQuality(q)} disabled={saving}
+                  className={`${color} text-white py-3 rounded-2xl font-bold shadow transition disabled:opacity-50 flex flex-col items-center`}>
+                  <span className="text-base">{label}</span>
+                  <span className="text-xs opacity-80 font-normal mt-0.5">{sub}</span>
+                </button>
+              ))}
             </div>
           </div>
         )}
       </div>
-
     </div>
   )
 }
@@ -415,9 +467,9 @@ function StudyContent() {
 export default function StudyPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3">
-        <div className="text-5xl animate-bounce">ワ</div>
-        <p className="text-gray-400">隱ｭ縺ｿ霎ｼ縺ｿ荳ｭ...</p>
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#FFFDF0]">
+        <div className="text-5xl animate-bounce">🃏</div>
+        <p className="text-gray-400">よみこみちゅう...</p>
       </div>
     }>
       <StudyContent />
