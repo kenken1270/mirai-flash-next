@@ -22,20 +22,14 @@ type Card = {
 
 function getDifficultyRowColor(difficulty: number): string {
   switch (difficulty) {
-    case 1: return 'bg-green-50 hover:bg-green-100'
-    case 2: return 'bg-yellow-50 hover:bg-yellow-100'
-    case 3: return 'bg-orange-50 hover:bg-orange-100'
-    case 4: return 'bg-red-50 hover:bg-red-100'
-    default: return 'bg-white hover:bg-gray-50'
+    case 1: return 'bg-green-50'
+    case 2: return 'bg-yellow-50'
+    case 3: return 'bg-orange-50'
+    case 4: return 'bg-red-50'
+    default: return 'bg-white'
   }
 }
 
-function maskText(text: string): string {
-  if (!text) return '？'
-  return '？'.repeat(Math.min(text.length, 8))
-}
-
-// ① lang1の文字コードで言語判定（lang3の例文に引きずられないよう修正）
 function detectLang(lang1: string): 'zh' | 'en' | 'ja' {
   if (!lang1) return 'ja'
   const code = lang1.charCodeAt(0)
@@ -43,6 +37,31 @@ function detectLang(lang1: string): 'zh' | 'en' | 'ja' {
   if (code >= 0x3040 && code <= 0x30FF) return 'ja'
   if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) return 'en'
   return 'ja'
+}
+
+// 赤ブロックコンポーネント：タップで1セルめくれる
+function RedBlock({
+  text,
+  hidden,
+  onReveal,
+}: {
+  text: string
+  hidden: boolean
+  onReveal: () => void
+}) {
+  if (!hidden) {
+    return <span>{text || '—'}</span>
+  }
+  return (
+    <button
+      onClick={e => { e.stopPropagation(); onReveal() }}
+      className="inline-block bg-red-500 rounded px-2 py-0.5 min-w-[2.5rem] text-red-500 select-none cursor-pointer hover:bg-red-400 transition"
+      style={{ userSelect: 'none' }}
+      aria-label="タップして表示"
+    >
+      {text || '　'}
+    </button>
+  )
 }
 
 function FlashListContent() {
@@ -61,9 +80,10 @@ function FlashListContent() {
   const [diffFilter, setDiffFilter] = useState<number | null>(null)
 
   const [redSheetMode, setRedSheetMode] = useState(false)
-  // ② チェックボックスで複数選択できるよう Set で管理
+  // 隠す列をチェックボックスで選択
   const [hideTargets, setHideTargets] = useState<Set<string>>(new Set(['lang1']))
-  const [revealedIds, setRevealedIds] = useState<Set<number>>(new Set())
+  // セルごとの開示状態: key = `${cardId}_${field}`
+  const [revealedCells, setRevealedCells] = useState<Set<string>>(new Set())
   const [revealAll, setRevealAll] = useState(false)
 
   useEffect(() => {
@@ -101,14 +121,34 @@ function FlashListContent() {
       if (next.has(target)) { next.delete(target) } else { next.add(target) }
       return next
     })
+    // チェック変更時は開示状態リセット
+    setRevealedCells(new Set())
+    setRevealAll(false)
   }
 
-  const toggleReveal = (id: number) => {
-    setRevealedIds(prev => {
+  const revealCell = (cardId: number, field: string) => {
+    setRevealedCells(prev => {
       const next = new Set(prev)
-      if (next.has(id)) { next.delete(id) } else { next.add(id) }
+      next.add(`${cardId}_${field}`)
       return next
     })
+  }
+
+  const isCellHidden = (cardId: number, field: string): boolean => {
+    if (!redSheetMode) return false
+    if (revealAll) return false
+    if (!hideTargets.has(field)) return false
+    return !revealedCells.has(`${cardId}_${field}`)
+  }
+
+  const handleRevealAll = () => {
+    setRevealAll(true)
+    setRevealedCells(new Set())
+  }
+
+  const handleHideAll = () => {
+    setRevealAll(false)
+    setRevealedCells(new Set())
   }
 
   const filtered = cards.filter(c => {
@@ -124,13 +164,6 @@ function FlashListContent() {
     return true
   })
 
-  const isHidden = (cardId: number, field: string): boolean => {
-    if (!redSheetMode) return false
-    if (revealAll) return false
-    if (revealedIds.has(cardId)) return false
-    return hideTargets.has(field)
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -145,13 +178,13 @@ function FlashListContent() {
       {/* ヘッダー */}
       <div className="bg-yellow-400 px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow">
         <button onClick={() => router.back()} className="text-2xl font-bold">←</button>
-        <h1 className="text-xl font-bold text-gray-900 truncate">📋 {setName}</h1>
+        <h1 className="text-lg font-bold text-gray-900 truncate">📋 {setName}</h1>
         <span className="ml-auto bg-white text-yellow-700 font-bold text-base px-3 py-1 rounded-full">
           {filtered.length}件
         </span>
       </div>
 
-      {/* 検索・フィルター */}
+      {/* 検索・難易度フィルター */}
       <div className="px-4 py-3 bg-white border-b space-y-2">
         <input
           type="text"
@@ -171,17 +204,21 @@ function FlashListContent() {
                   : 'bg-white border-gray-300 text-gray-600'
               }`}
             >
-              {d === null ? '全て' : d === 1 ? '⭐' : d === 2 ? '⭐⭐' : d === 3 ? '⭐⭐⭐' : '⭐⭐⭐⭐'}
+              {d === null ? '全て' : '⭐'.repeat(d)}
             </button>
           ))}
         </div>
       </div>
 
       {/* 赤シートコントロール */}
-      <div className="px-4 py-3 bg-red-50 border-b">
-        <div className="flex items-center gap-3 mb-2">
+      <div className="px-4 py-3 bg-red-50 border-b space-y-2">
+        <div className="flex items-center gap-3 flex-wrap">
           <button
-            onClick={() => { setRedSheetMode(!redSheetMode); setRevealedIds(new Set()); setRevealAll(false) }}
+            onClick={() => {
+              setRedSheetMode(!redSheetMode)
+              setRevealedCells(new Set())
+              setRevealAll(false)
+            }}
             className={`px-4 py-2 rounded-xl font-bold text-base transition ${
               redSheetMode ? 'bg-red-500 text-white' : 'bg-white border border-red-300 text-red-500'
             }`}
@@ -191,35 +228,45 @@ function FlashListContent() {
           {redSheetMode && (
             <>
               <button
-                onClick={() => setRevealAll(!revealAll)}
-                className="px-3 py-2 rounded-xl border font-bold text-base bg-white border-gray-300"
+                onClick={handleRevealAll}
+                className="px-3 py-2 rounded-xl border font-bold text-base bg-white border-gray-300 text-gray-700"
               >
-                {revealAll ? '🙈 全て隠す' : '👁 全て表示'}
+                👁 全て表示
+              </button>
+              <button
+                onClick={handleHideAll}
+                className="px-3 py-2 rounded-xl border font-bold text-base bg-white border-gray-300 text-gray-700"
+              >
+                🙈 全て隠す
               </button>
             </>
           )}
         </div>
 
-        {/* ② チェックボックスで隠す項目を複数選択 */}
+        {/* チェックボックスで隠す列を選択 */}
         {redSheetMode && (
-          <div className="flex gap-4 flex-wrap text-base font-bold">
+          <div className="flex gap-4 flex-wrap">
             {[
               { key: 'lang1', label: '中国語' },
               { key: 'lang1_sub', label: 'ピンイン' },
               { key: 'lang2', label: '日本語' },
+              { key: 'lang2_sub', label: '中国語訳' },
               { key: 'lang3', label: '例文' },
             ].map(({ key, label }) => (
-              <label key={key} className="flex items-center gap-1 cursor-pointer">
+              <label key={key} className="flex items-center gap-1 cursor-pointer text-base font-bold">
                 <input
                   type="checkbox"
                   checked={hideTargets.has(key)}
                   onChange={() => toggleHideTarget(key)}
                   className="w-4 h-4 accent-red-500"
                 />
-                <span className="text-gray-700">{label}を隠す</span>
+                <span className="text-gray-700">{label}</span>
               </label>
             ))}
           </div>
+        )}
+        {redSheetMode && (
+          <p className="text-sm text-red-500 font-bold">🟥 赤いブロックをタップすると1つずつ表示されます</p>
         )}
       </div>
 
@@ -231,52 +278,64 @@ function FlashListContent() {
           <table className="w-full border-collapse text-base">
             <thead>
               <tr className="bg-yellow-100 text-gray-700 text-base">
-                <th className="px-2 py-2 text-center w-10">#</th>
+                <th className="px-2 py-2 text-center w-8">#</th>
                 <th className="px-3 py-2 text-left">中国語</th>
                 <th className="px-3 py-2 text-left">ピンイン</th>
                 <th className="px-3 py-2 text-left">日本語</th>
-                {/* ④ 中国語訳（lang2_sub）は常時表示列として固定 */}
                 <th className="px-3 py-2 text-left text-red-600">中国語訳</th>
+                <th className="px-3 py-2 text-left text-blue-600">例文</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map(card => {
-                const lang = detectLang(card.lang1)  // ① lang1で言語判定
                 const rowColor = getDifficultyRowColor(card.difficulty)
-                const revealed = revealedIds.has(card.id)
-
                 return (
-                  <tr
-                    key={card.id}
-                    className={`${rowColor} border-b border-gray-200 cursor-pointer transition`}
-                    onClick={() => redSheetMode && toggleReveal(card.id)}
-                  >
+                  <tr key={card.id} className={`${rowColor} border-b border-gray-200`}>
                     <td className="px-2 py-3 text-center text-gray-400 text-sm font-mono">{card.item_no}</td>
 
                     {/* 中国語 */}
                     <td className="px-3 py-3 font-bold text-xl text-gray-900">
-                      {isHidden(card.id, 'lang1')
-                        ? <span className="text-red-400 tracking-widest">{maskText(card.lang1)}</span>
-                        : card.lang1}
+                      <RedBlock
+                        text={card.lang1}
+                        hidden={isCellHidden(card.id, 'lang1')}
+                        onReveal={() => revealCell(card.id, 'lang1')}
+                      />
                     </td>
 
                     {/* ピンイン */}
                     <td className="px-3 py-3 text-base text-gray-500 italic">
-                      {isHidden(card.id, 'lang1_sub')
-                        ? <span className="text-red-400">{maskText(card.lang1_sub)}</span>
-                        : card.lang1_sub}
+                      <RedBlock
+                        text={card.lang1_sub}
+                        hidden={isCellHidden(card.id, 'lang1_sub')}
+                        onReveal={() => revealCell(card.id, 'lang1_sub')}
+                      />
                     </td>
 
                     {/* 日本語 */}
                     <td className="px-3 py-3 text-base text-gray-800">
-                      {isHidden(card.id, 'lang2')
-                        ? <span className="text-red-400">{maskText(card.lang2)}</span>
-                        : card.lang2}
+                      <RedBlock
+                        text={card.lang2}
+                        hidden={isCellHidden(card.id, 'lang2')}
+                        onReveal={() => revealCell(card.id, 'lang2')}
+                      />
                     </td>
 
-                    {/* ④ 中国語訳（lang2_sub）は赤シートONでも隠さず常時表示 */}
+                    {/* 中国語訳 */}
                     <td className="px-3 py-3 text-base text-red-700 font-semibold">
-                      {card.lang2_sub || '—'}
+                      <RedBlock
+                        text={card.lang2_sub}
+                        hidden={isCellHidden(card.id, 'lang2_sub')}
+                        onReveal={() => revealCell(card.id, 'lang2_sub')}
+                      />
+                    </td>
+
+                    {/* 例文 */}
+                    <td className="px-3 py-3 text-sm text-blue-700 max-w-xs">
+                      <RedBlock
+                        text={card.lang3}
+                        hidden={isCellHidden(card.id, 'lang3')}
+                        onReveal={() => revealCell(card.id, 'lang3')}
+                      />
                     </td>
                   </tr>
                 )
@@ -314,7 +373,11 @@ function FlashListContent() {
 
 export default function FlashListPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-64 text-yellow-500 text-2xl animate-pulse">🐕 読み込み中...</div>}>
+    <Suspense fallback={
+      <div className="flex items-center justify-center h-64 text-yellow-500 text-2xl animate-pulse">
+        🐕 読み込み中...
+      </div>
+    }>
       <FlashListContent />
     </Suspense>
   )
