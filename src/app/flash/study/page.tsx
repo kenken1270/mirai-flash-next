@@ -49,7 +49,7 @@ function StudyContent() {
   const searchParams = useSearchParams()
   const setId    = Number(searchParams.get('id') ?? searchParams.get('setId') ?? 0)
   const bookId   = Number(searchParams.get('bookId') ?? 0)
-  const setName  = decodeURIComponent(searchParams.get('setName') ?? '蜊倩ｪ槫ｭｦ鄙・)
+  const setName  = decodeURIComponent(searchParams.get('setName') ?? '')
   const startNo  = parseInt(searchParams.get('start') ?? '1')
   const endNo    = parseInt(searchParams.get('end')   ?? '9999')
 
