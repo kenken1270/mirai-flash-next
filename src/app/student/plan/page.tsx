@@ -26,7 +26,10 @@ function PlanContent() {
   const [toast, setToast]       = useState('')
   const [selectedDate, setSelectedDate] = useState(todayStr())
   const [showAddStock, setShowAddStock] = useState(false)
+  
+  // クエスト追加用ステート
   const [newStock, setNewStock] = useState({ task_name: '', mid_plan: '', page_range: '', planned_minutes: 30 })
+  const [availablePages, setAvailablePages] = useState<string[]>([])
 
   useEffect(() => {
     async function init() {
@@ -40,14 +43,40 @@ function PlanContent() {
     init()
   }, [router])
 
+  // 教材名が選ばれたら、その教材のページリストを取得
+  useEffect(() => {
+    async function fetchPages() {
+      if (!newStock.mid_plan) { setAvailablePages([]); return }
+      const { data } = await supabase
+        .from('learning_resources')
+        .select('page_no')
+        .eq('material_name', newStock.mid_plan)
+        .eq('resource_type', 'page')
+      
+      const pages = Array.from(new Set(data?.map(d => d.page_no).filter(Boolean) || [])) as string[]
+      setAvailablePages(pages.sort())
+    }
+    fetchPages()
+  }, [newStock.mid_plan])
+
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
   const bigGoal = useMemo(() => plans[0]?.big_plan || '受験合格！', [plans])
   const stockTasks = useMemo(() => plans.filter(p => !p.task_date && p.is_done === 0), [plans])
   const dayTasks = useMemo(() => plans.filter(p => p.task_date === selectedDate), [plans, selectedDate])
-  const materialList = useMemo(() => Array.from(new Set(plans.map(p => p.mid_plan).filter(Boolean))), [plans])
+  
+  // 既存の教材リスト（plansとlearning_resourcesの両方から取得）
+  const [masterMaterials, setMasterMaterials] = useState<string[]>([])
+  useEffect(() => {
+    async function getMaterials() {
+      const { data } = await supabase.from('learning_resources').select('material_name')
+      const names = Array.from(new Set(data?.map(d => d.material_name).filter(Boolean) || [])) as string[]
+      setMasterMaterials(names.sort())
+    }
+    getMaterials()
+  }, [])
 
   async function addStockTask() {
-    if (!newStock.task_name.trim() || !newStock.mid_plan.trim()) { alert("全部うめてね！"); return }
+    if (!newStock.task_name.trim() || !newStock.mid_plan.trim()) { alert("うめてね！"); return }
     await insertPlan({
       username, big_plan: bigGoal, mid_plan: newStock.mid_plan, task_name: newStock.task_name, task_date: '',
       is_done: 0, video_url: '', task_type: 'lesson', planned_minutes: newStock.planned_minutes,
@@ -58,18 +87,13 @@ function PlanContent() {
   }
 
   async function assignTaskToDate(task: PlanRow) {
-    await updatePlan(task.id, { task_date: selectedDate })
-    setPlans(await loadPlans(username)); showToast(`📅 セットしたよ！`)
+    await updatePlan(task.id, { task_date: selectedDate }); setPlans(await loadPlans(username)); showToast(`📅 セットしたよ！`)
   }
 
   async function toggleDone(task: PlanRow) {
     const nd = task.is_done === 1 ? 0 : 1
-    await updatePlan(task.id, { is_done: nd })
-    setPlans(await loadPlans(username))
-    if (nd === 1 && user) {
-      showToast('🎉 ナイス！+10 EXP')
-      await saveUserFields(username, { current_points: (user.current_points ?? 0) + 10 })
-    }
+    await updatePlan(task.id, { is_done: nd }); setPlans(await loadPlans(username))
+    if (nd === 1 && user) { showToast('🎉 ナイス！+10 EXP'); await saveUserFields(username, { current_points: (user.current_points ?? 0) + 10 }) }
   }
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFDF0] animate-pulse text-yellow-600 font-bold">🐕 準備中...</div>
@@ -81,6 +105,7 @@ function PlanContent() {
         <p className="text-[10px] font-bold text-yellow-400 uppercase tracking-widest mb-1">Main Quest</p>
         <h1 className="text-xl font-black italic text-yellow-400">🏆 {bigGoal}</h1>
       </div>
+      
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
         <section className="space-y-3">
           <div className="flex justify-between items-end px-1"><h2 className="text-sm font-black text-gray-400 uppercase">📦 Quest Pool</h2><button onClick={() => setShowAddStock(true)} className="text-[10px] font-black bg-indigo-100 text-indigo-600 px-3 py-1 rounded-lg">＋ 追加</button></div>
@@ -94,6 +119,7 @@ function PlanContent() {
             ))}
           </div>
         </section>
+
         <section className="space-y-4">
           <div className="flex justify-between items-end px-1"><h2 className="text-sm font-black text-gray-400 uppercase">⚡ Daily Planner</h2><p className="text-[10px] font-black text-indigo-500">{selectedDate}</p></div>
           <div className="flex gap-1 justify-between">
@@ -118,16 +144,22 @@ function PlanContent() {
           </div>
         </section>
       </div>
+
       {showAddStock && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-end p-4 animate-in fade-in" onClick={() => setShowAddStock(false)}>
           <div className="bg-white rounded-t-[2.5rem] w-full p-6 space-y-4 max-w-md mx-auto mb-10 shadow-2xl" onClick={e => e.stopPropagation()}>
             <h2 className="font-black text-lg">NEW QUEST</h2>
             <div className="space-y-3">
-              <input placeholder="タスク名" value={newStock.task_name} onChange={e => setNewStock({...newStock, task_name: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-bold border-2 border-transparent focus:border-yellow-400 outline-none" />
+              <input placeholder="タスク名 (例: 第1課の練習B)" value={newStock.task_name} onChange={e => setNewStock({...newStock, task_name: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none" />
               <div className="grid grid-cols-2 gap-3">
-                <input list="mat-list" placeholder="教材名" value={newStock.mid_plan} onChange={e => setNewStock({...newStock, mid_plan: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-xs" />
-                <datalist id="mat-list">{materialList.map(m => <option key={m} value={m} />)}</datalist>
-                <input placeholder="ページ (例: p.6)" value={newStock.page_range} onChange={e => setNewStock({...newStock, page_range: e.target.value})} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-xs" />
+                <select value={newStock.mid_plan} onChange={e => setNewStock({...newStock, mid_plan: e.target.value, page_range: ''})} className="w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-xs appearance-none">
+                  <option value="">教材をえらぶ</option>
+                  {masterMaterials.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+                <select value={newStock.page_range} onChange={e => setNewStock({...newStock, page_range: e.target.value})} className={`w-full p-4 bg-gray-50 rounded-2xl font-bold outline-none text-xs appearance-none ${!newStock.mid_plan ? 'opacity-30' : ''}`} disabled={!newStock.mid_plan}>
+                  <option value="">ページ</option>
+                  {availablePages.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
               </div>
             </div>
             <button onClick={addStockTask} className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black shadow-lg">保存！</button>
