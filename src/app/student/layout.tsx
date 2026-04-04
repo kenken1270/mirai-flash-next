@@ -1,74 +1,76 @@
-'use client'
+﻿'use client'
+import { useState } from 'react'
+import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-
-const NAV = [
-  { href: '/student',          label: 'ホーム',       icon: '🏠' },
-  { href: '/student/today',    label: '今日',          icon: '📚' },
-  { href: '/student/calendar', label: 'カレンダー',    icon: '📅' },
-  { href: '/student/plan',     label: '計画',          icon: '🗺️'  },
-  { href: '/student/test',     label: 'テスト',        icon: '✏️'  },
-]
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
   const router = useRouter()
+  const pathname = usePathname()
+  const [isOpen, setIsOpen] = useState(false)
 
-  async function handleLogout() {
-    await supabase.auth.signOut()
-    router.push('/login')
-  }
+  const menuItems = [
+    { name: '🔥 今日のクエスト', path: '/student/today', icon: '🎯' },
+    { name: '📅 未来の見通し', path: '/student/plan', icon: '🗺️' },
+    { name: '🃏 単語学習', path: '/flash', icon: '📚' },
+    { name: '📝 小テスト', path: '/student/test', icon: '✏️' },
+    { name: '🐶 ぼくの成績', path: '/student', icon: '⭐' },
+  ]
 
   return (
-    <div className="min-h-screen" style={{ background: '#FFFDF0' }}>
-
-      {/* ===== 全ページ共通ヘッダー ===== */}
-      <header
-        className="sticky top-0 z-50 px-4 py-3 flex items-center justify-between shadow-sm"
-        style={{ background: '#FCD34D' }}
-      >
-        <Link href="/student" className="flex items-center gap-2">
+    <div className="min-h-screen bg-[#FFFDF0] flex flex-col font-sans text-gray-800">
+      {/* ヘッダー */}
+      <header className="bg-yellow-400 px-4 py-4 shadow-sm flex items-center justify-between sticky top-0 z-50">
+        <div className="flex items-center gap-2" onClick={() => router.push('/student')}>
           <span className="text-2xl">🐕</span>
-          <span className="font-black text-lg" style={{ color: '#1C1410' }}>未来塾</span>
-        </Link>
-        <button
-          onClick={handleLogout}
-          className="text-sm bg-white px-3 py-1.5 rounded-full shadow font-bold transition-all active:scale-95"
-          style={{ color: '#78350F', border: '1px solid #F59E0B' }}
+          <h1 className="font-black italic tracking-tighter text-gray-900">MIRAI JUKU</h1>
+        </div>
+
+        {/* 三点リーダー（ハンバーガー）ボタン */}
+        <button 
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-10 h-10 flex flex-col items-center justify-center gap-1.5 focus:outline-none z-[60]"
         >
-          🚪 ログアウト
+          <div className={`w-6 h-1 bg-gray-900 rounded-full transition-all ${isOpen ? 'rotate-45 translate-y-2.5' : ''}`}></div>
+          <div className={`w-6 h-1 bg-gray-900 rounded-full transition-all ${isOpen ? 'opacity-0' : ''}`}></div>
+          <div className={`w-6 h-1 bg-gray-900 rounded-full transition-all ${isOpen ? '-rotate-45 -translate-y-2.5' : ''}`}></div>
         </button>
       </header>
 
-      {/* ===== メインコンテンツ ===== */}
-      <main className="pb-24">
+      {/* ドロワーメニュー */}
+      {isOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[55] animate-in fade-in" onClick={() => setIsOpen(false)}></div>
+          <div className="fixed top-0 right-0 bottom-0 w-64 bg-white z-[56] shadow-2xl p-6 pt-20 animate-in slide-in-from-right duration-300">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-6">Menu</p>
+            <nav className="space-y-2">
+              {menuItems.map((item) => (
+                <Link 
+                  key={item.path} 
+                  href={item.path}
+                  onClick={() => setIsOpen(false)}
+                  className={`flex items-center gap-3 p-4 rounded-2xl font-bold transition-all ${
+                    pathname === item.path ? 'bg-yellow-400 text-gray-900 shadow-md' : 'text-gray-500 hover:bg-gray-50'
+                  }`}
+                >
+                  <span className="text-xl">{item.icon}</span>
+                  <span className="text-sm">{item.name}</span>
+                </Link>
+              ))}
+            </nav>
+            <button 
+              onClick={() => router.push('/login')}
+              className="absolute bottom-10 left-6 right-6 py-3 rounded-xl border-2 border-gray-100 text-gray-400 font-bold text-xs"
+            >
+              ログアウト
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* メインコンテンツ */}
+      <main className="flex-1 flex flex-col">
         {children}
       </main>
-
-      {/* ===== ボトムナビ（全ページ共通） ===== */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t z-50 shadow-lg"
-        style={{ borderColor: '#FDE68A' }}>
-        <div className="flex justify-around items-center max-w-2xl mx-auto">
-          {NAV.map(({ href, label, icon }) => {
-            const isActive = pathname === href ||
-              (href !== '/student' && pathname.startsWith(href))
-            return (
-              <Link key={href} href={href}
-                className="flex flex-col items-center py-2 px-3 text-xs transition-all"
-                style={{ color: isActive ? '#F59E0B' : '#9CA3AF' }}
-              >
-                <span className="text-xl mb-0.5">{icon}</span>
-                <span className={isActive ? 'font-black' : ''}>{label}</span>
-                {isActive && (
-                  <span className="w-4 h-1 rounded-full mt-0.5" style={{ background: '#F59E0B' }} />
-                )}
-              </Link>
-            )
-          })}
-        </div>
-      </nav>
-
     </div>
   )
 }
