@@ -121,15 +121,21 @@ function StudyContent() {
       const limit = userRes.data?.[0]?.base_daily_limit ?? 20
 
       let studyQueue: Card[]
-      if (startNo > 1 || endNo < 9999) {
+      // 範囲指定あり OR bookId指定あり → 制限なく全件をランダムで出題（何度でもテスト可能）
+      if (startNo > 1 || endNo < 9999 || bookId) {
         studyQueue = [...allCards].sort(() => Math.random() - 0.5)
       } else {
+        // 範囲指定なし（通常学習）→ 新規カード＋復習期限カードのみ
         const newCards = allCards.filter(c => !logMap.has(c.id)).slice(0, limit)
         const dueCards = allCards.filter(c => {
           const log = logMap.get(c.id)
           return log && log.next_review_date <= today
         })
         studyQueue = [...newCards, ...dueCards].sort(() => Math.random() - 0.5)
+        // 通常学習でも0件なら全件出題（何度でもテスト可能）
+        if (studyQueue.length === 0) {
+          studyQueue = [...allCards].sort(() => Math.random() - 0.5)
+        }
       }
 
       setQueue(studyQueue)
