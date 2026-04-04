@@ -18,7 +18,7 @@ function RedBlock({ text, hidden, onReveal }: { text: string; hidden: boolean; o
   if (!hidden) return <span className="break-words">{text || '—'}</span>
   return (
     <button onClick={e => { e.stopPropagation(); onReveal() }}
-      className="inline-block bg-red-500 rounded px-2 py-0.5 min-w-[3rem] text-red-500 select-none"
+      className="inline-block bg-red-500 rounded px-2 py-0.5 min-w-[3rem] text-red-500 select-none hover:bg-red-400 transition"
     >
       {text || '　'}
     </button>
@@ -34,8 +34,10 @@ function FlashListContent() {
   const [cards, setCards] = useState<Card[]>([]);
   const [bookInfo, setBookInfo] = useState({ lang1_label: '単語', lang2_label: '日本語' });
   const [loading, setLoading] = useState(true);
-  const [redSheetMode, setRedSheetMode] = useState(false);
+  
+  // 表示項目と隠す項目のステート
   const [visibleCols, setVisibleCols] = useState<Set<string>>(new Set(['lang1', 'lang2']));
+  const [redSheetMode, setRedSheetMode] = useState(false);
   const [hideTargets, setHideTargets] = useState<Set<string>>(new Set(['lang1']));
   const [revealedCells, setRevealedCells] = useState<Set<string>>(new Set());
 
@@ -61,13 +63,11 @@ function FlashListContent() {
   }, [setId, bookId, start, end]);
 
   const isEnglish = bookInfo.lang1_label.includes('英') || bookInfo.lang1_label.includes('英語');
-  const showZh = isEnglish;
-  
   const colOptions = [
     { key: 'lang1', label: bookInfo.lang1_label },
     { key: 'lang1_sub', label: 'よみ' },
     { key: 'lang2', label: bookInfo.lang2_label },
-    ...(showZh ? [{ key: 'lang3_sub', label: '中国語' }] : []),
+    ...(isEnglish ? [{ key: 'lang3_sub', label: '中国語' }] : []),
     { key: 'lang3', label: '例文' },
   ];
 
@@ -75,6 +75,13 @@ function FlashListContent() {
     const u = new window.SpeechSynthesisUtterance(text); u.lang = "en-US";
     window.speechSynthesis.speak(u);
   };
+
+  const isHidden = (cardId: number, key: string) => {
+    return redSheetMode && hideTargets.has(key) && !revealedCells.has(cardId + '_' + key);
+  }
+  const reveal = (cardId: number, key: string) => {
+    setRevealedCells(new Set(revealedCells).add(cardId + '_' + key));
+  }
 
   if (loading) return <div className="p-10 text-center animate-pulse text-yellow-500">🐕 読み込み中...</div>
 
@@ -86,9 +93,10 @@ function FlashListContent() {
         <span className="text-xs bg-white px-2 py-1 rounded-full">{cards.length}語</span>
       </div>
 
-      <div className="p-3 bg-white border-b space-y-3">
+      <div className="p-3 bg-white border-b space-y-4">
+        {/* 表示する列の選択 */}
         <div>
-          <p className="text-[10px] font-bold text-gray-400 mb-1">表示する項目</p>
+          <p className="text-[10px] font-bold text-gray-400 mb-1">👀 表示する項目</p>
           <div className="flex flex-wrap gap-2">
             {colOptions.map(opt => (
               <button key={opt.key} onClick={() => {
@@ -102,50 +110,77 @@ function FlashListContent() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <button onClick={() => setRedSheetMode(!redSheetMode)} className={`flex-1 py-2 rounded-xl font-bold text-sm ${redSheetMode ? 'bg-red-500 text-white' : 'bg-red-50 border border-red-200 text-red-500'}`}>
-            🟥 赤シート {redSheetMode ? 'ON' : 'OFF'}
-          </button>
+        {/* 赤シートの設定 */}
+        <div className="bg-red-50 p-3 rounded-xl border border-red-100 space-y-2">
+          <div className="flex items-center gap-2">
+            <button onClick={() => {setRedSheetMode(!redSheetMode); setRevealedCells(new Set());}} 
+              className={`flex-1 py-2 rounded-xl font-bold text-sm transition ${redSheetMode ? 'bg-red-500 text-white shadow-lg' : 'bg-white border border-red-200 text-red-500'}`}>
+              🟥 赤シート {redSheetMode ? 'ON' : 'OFF'}
+            </button>
+          </div>
+          {redSheetMode && (
+            <div>
+              <p className="text-[10px] font-bold text-red-400 mb-1">🎯 隠すターゲット</p>
+              <div className="flex flex-wrap gap-2">
+                {colOptions.filter(o => visibleCols.has(o.key) && o.key !== 'lang3').map(opt => (
+                  <button key={'h_'+opt.key} onClick={() => {
+                    const next = new Set(hideTargets);
+                    if (next.has(opt.key)) next.delete(opt.key); else next.add(opt.key);
+                    setHideTargets(next);
+                    setRevealedCells(new Set());
+                  }} className={`px-2 py-1 rounded-lg text-xs font-bold border transition ${hideTargets.has(opt.key) ? 'bg-red-400 text-white' : 'bg-white text-red-300 border-red-100'}`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="divide-y divide-gray-200">
         {cards.map(card => (
           <div key={card.id} className="p-3 bg-white flex flex-col gap-1">
-            <div className="flex items-center gap-2 text-[10px] text-gray-400 font-mono">#{card.item_no}</div>
-            <div className="flex flex-wrap items-start gap-x-4 gap-y-2">
+            <div className="text-[10px] text-gray-300 font-mono">#{card.item_no}</div>
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
               {visibleCols.has('lang1') && (
-                <div className="min-w-[80px] flex-1">
+                <div className="min-w-[100px] flex-1">
                   <p className="text-[10px] text-gray-400">{bookInfo.lang1_label}</p>
                   <div className="flex items-center gap-1">
                     <button onClick={() => speak(card.lang1)} className="text-gray-300 text-sm">🔊</button>
                     <span className="font-bold text-lg">
-                      <RedBlock text={card.lang1} hidden={redSheetMode && hideTargets.has('lang1') && !revealedCells.has(card.id+'_l1')} onReveal={() => setRevealedCells(new Set(revealedCells).add(card.id+'_l1'))} />
+                      <RedBlock text={card.lang1} hidden={isHidden(card.id, 'lang1')} onReveal={() => reveal(card.id, 'lang1')} />
                     </span>
                   </div>
                 </div>
               )}
               {visibleCols.has('lang1_sub') && (
-                <div className="min-w-[60px] flex-1">
+                <div className="min-w-[80px] flex-1">
                   <p className="text-[10px] text-gray-400">よみ</p>
-                  <span className="text-gray-500 text-sm italic">{card.lang1_sub}</span>
+                  <span className="text-gray-500 text-sm italic">
+                    <RedBlock text={card.lang1_sub} hidden={isHidden(card.id, 'lang1_sub')} onReveal={() => reveal(card.id, 'lang1_sub')} />
+                  </span>
                 </div>
               )}
               {visibleCols.has('lang2') && (
-                <div className="min-w-[100px] flex-[2]">
+                <div className="min-w-[120px] flex-[2]">
                   <p className="text-[10px] text-gray-400">{bookInfo.lang2_label}</p>
-                  <span className="text-gray-800 text-sm">{card.lang2}</span>
+                  <span className="text-gray-800 text-sm">
+                    <RedBlock text={card.lang2} hidden={isHidden(card.id, 'lang2')} onReveal={() => reveal(card.id, 'lang2')} />
+                  </span>
                 </div>
               )}
               {visibleCols.has('lang3_sub') && (
-                <div className="min-w-[80px] flex-1">
+                <div className="min-w-[100px] flex-1">
                   <p className="text-[10px] text-red-400">中国語</p>
-                  <span className="text-red-700 text-sm font-medium">{card.lang3_sub}</span>
+                  <span className="text-red-700 text-sm font-medium">
+                    <RedBlock text={card.lang3_sub} hidden={isHidden(card.id, 'lang3_sub')} onReveal={() => reveal(card.id, 'lang3_sub')} />
+                  </span>
                 </div>
               )}
-              {visibleCols.has('lang3') && (
+              {visibleCols.has('lang3') && card.lang3 && (
                 <div className="w-full mt-1 bg-blue-50 p-2 rounded text-xs text-blue-800">
-                  <p className="text-[10px] opacity-50">例文</p>
+                  <p className="text-[10px] opacity-50 mb-1">例文</p>
                   {card.lang3}
                 </div>
               )}
