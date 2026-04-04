@@ -84,10 +84,7 @@ function FlashListContent() {
   useEffect(() => {
     async function fetchData() {
       setLoading(true)
-
-      // book_id の特定（setId経由 or bookId直接）
       let resolvedBookId: number | null = bookId ? Number(bookId) : null
-
       if (setId && !resolvedBookId) {
         const { data: setData } = await supabase
           .from('flashcard_sets')
@@ -96,8 +93,6 @@ function FlashListContent() {
           .single()
         if (setData) resolvedBookId = setData.book_id
       }
-
-      // flashcard_books から lang1_label / lang2_label を取得
       if (resolvedBookId) {
         const { data: bookData } = await supabase
           .from('flashcard_books')
@@ -111,15 +106,12 @@ function FlashListContent() {
           })
         }
       }
-
-      // カード取得
       let query = supabase
         .from('flashcards_v3')
         .select('id, item_no, lang1, lang1_sub, lang2, lang2_sub, lang3, lang3_sub, difficulty')
         .gte('item_no', start)
         .lte('item_no', end)
         .order('item_no')
-
       if (setId) {
         query = query.eq('set_id', Number(setId))
       } else if (bookId) {
@@ -131,7 +123,6 @@ function FlashListContent() {
           query = query.in('set_id', sets.map(s => s.id))
         }
       }
-
       const { data } = await query
       setCards(data ?? [])
       setLoading(false)
@@ -177,18 +168,15 @@ function FlashListContent() {
     return true
   })
 
-  // lang1_label に応じてピンイン列ラベルを決定
   const pinyin_label = bookInfo.lang1_label === '中国語' ? 'ピンイン'
-    : bookInfo.lang1_label === '英語' ? '発音記号'
+    : (bookInfo.lang1_label === '英語' || bookInfo.lang1_label === '英単語' || bookInfo.lang1_label.includes('英検')) ? 'よみ'
     : 'よみ'
 
-  // 中国語訳列：中国語教材はlang2_sub、英語教材はlang3_sub
   const isChinese = bookInfo.lang1_label === '中国語'
-  const isEnglish = bookInfo.lang1_label === '英語' || bookInfo.lang1_label === '英単語' || bookInfo.lang1_label === '英検'
+  const isEnglish = bookInfo.lang1_label === '英語' || bookInfo.lang1_label === '英単語' || bookInfo.lang1_label.includes('英検')
   const showLang2Sub = isChinese
   const showLang3Sub = isEnglish
 
-  // チェックボックスの選択肢（教材に応じて動的）
   const hideOptions = [
     { key: 'lang1',     label: bookInfo.lang1_label },
     { key: 'lang1_sub', label: pinyin_label },
@@ -197,6 +185,12 @@ function FlashListContent() {
     ...(showLang3Sub ? [{ key: 'lang3_sub', label: '中国語訳' }] : []),
     { key: 'lang3',     label: '例文' },
   ]
+
+  const speak = (text: string) => {
+    const uttr = new window.SpeechSynthesisUtterance(text);
+    uttr.lang = "en-US";
+    window.speechSynthesis.speak(uttr);
+  }
 
   if (loading) {
     return (
@@ -208,8 +202,6 @@ function FlashListContent() {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-
-      {/* ヘッダー */}
       <div className="bg-yellow-400 px-4 py-3 flex items-center gap-3 sticky top-0 z-10 shadow">
         <button onClick={() => router.back()} className="text-2xl font-bold">←</button>
         <h1 className="text-lg font-bold text-gray-900 truncate">📋 {setName}</h1>
@@ -218,7 +210,6 @@ function FlashListContent() {
         </span>
       </div>
 
-      {/* 検索・難易度フィルター */}
       <div className="px-4 py-3 bg-white border-b space-y-2">
         <input
           type="text"
@@ -244,7 +235,6 @@ function FlashListContent() {
         </div>
       </div>
 
-      {/* 赤シートコントロール */}
       <div className="px-4 py-3 bg-red-50 border-b space-y-2">
         <div className="flex items-center gap-3 flex-wrap">
           <button
@@ -259,7 +249,7 @@ function FlashListContent() {
           >
             🟥 赤シート{redSheetMode ? ' ON' : ' OFF'}
           </button>
-          (true || redSheetMode) && (
+          {redSheetMode && (
             <>
               <button
                 onClick={() => { setRevealAll(true); setRevealedCells(new Set()) }}
@@ -277,27 +267,24 @@ function FlashListContent() {
           )}
         </div>
 
-        (true || redSheetMode) && (
-          <>
-            <div className="flex gap-4 flex-wrap">
-              {hideOptions.map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-1 cursor-pointer text-base font-bold">
-                  <input
-                    type="checkbox"
-                    checked={hideTargets.has(key)}
-                    onChange={() => toggleHideTarget(key)}
-                    className="w-4 h-4 accent-red-500"
-                  />
-                  <span className="text-gray-700">{label}</span>
-                </label>
-              ))}
-            </div>
-            <p className="text-sm text-red-500 font-bold">🟥 赤いブロックをタップすると1つずつ表示されます</p>
-          </>
+        <div className="flex gap-4 flex-wrap">
+          {hideOptions.map(({ key, label }) => (
+            <label key={key} className="flex items-center gap-1 cursor-pointer text-base font-bold">
+              <input
+                type="checkbox"
+                checked={hideTargets.has(key)}
+                onChange={() => toggleHideTarget(key)}
+                className="w-4 h-4 accent-red-500"
+              />
+              <span className="text-gray-700">{label}</span>
+            </label>
+          ))}
+        </div>
+        {redSheetMode && (
+          <p className="text-sm text-red-500 font-bold">🟥 赤いブロックをタップすると1つずつ表示されます</p>
         )}
       </div>
 
-      {/* 単語テーブル */}
       {filtered.length === 0 ? (
         <div className="text-center text-gray-400 text-xl mt-20">該当する単語がありません</div>
       ) : (
@@ -325,25 +312,17 @@ function FlashListContent() {
                   <tr key={card.id} className={`${rowColor} border-b border-gray-200`}>
                     <td className="px-2 py-3 text-center text-gray-400 text-sm font-mono">{card.item_no}</td>
 
-                    {/* lang1（英語 or 中国語 or 日本語） */}
-                    <td className="px-3 py-3 font-bold text-xl text-gray-900 flex items-center gap-2">
-                      <button onClick={() => {
-                        const uttr = new window.SpeechSynthesisUtterance(card.lang1);
-                        uttr.lang = "en-US";
-                        window.speechSynthesis.speak(uttr);
-                      }} className="text-gray-400 hover:text-yellow-500 transition">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                          <path fillRule="evenodd" d="M9.383 3.076A1 1 0 0110 4v12a1 1 0 01-1.707.707L4.586 13H2a1 1 0 01-1-1V8a1 1 0 011-1h2.586l3.707-3.707a1 1 0 011.09-.217zM14.657 2.929a1 1 0 011.414 0A9.972 9.972 0 0119 10a9.972 9.972 0 01-2.929 7.071 1 1 0 01-1.414-1.414A7.971 7.971 0 0017 10c0-2.21-.894-4.208-2.343-5.657a1 1 0 010-1.414zm-2.829 2.828a1 1 0 011.415 0A5.983 5.983 0 0115 10a5.983 5.983 0 01-1.757 4.243 1 1 0 01-1.415-1.415A3.984 3.984 0 0013 10a3.984 3.984 0 00-1.172-2.828a1 1 0 010-1.415z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                      <RedBlock
-                        text={card.lang1}
-                        hidden={isCellHidden(card.id, 'lang1')}
-                        onReveal={() => revealCell(card.id, 'lang1')}
-                      />
+                    <td className="px-3 py-3 font-bold text-xl text-gray-900">
+                      <div className="flex items-center gap-2">
+                        <button onClick={() => speak(card.lang1)} className="text-gray-400 hover:text-yellow-500 p-1">🔊</button>
+                        <RedBlock
+                          text={card.lang1}
+                          hidden={isCellHidden(card.id, 'lang1')}
+                          onReveal={() => revealCell(card.id, 'lang1')}
+                        />
+                      </div>
                     </td>
 
-                    {/* ピンイン / 発音記号 */}
                     <td className="px-3 py-3 text-base text-gray-500 italic">
                       <RedBlock
                         text={card.lang1_sub}
@@ -352,7 +331,6 @@ function FlashListContent() {
                       />
                     </td>
 
-                    {/* 日本語訳 */}
                     <td className="px-3 py-3 text-base text-gray-800">
                       <RedBlock
                         text={card.lang2}
@@ -361,7 +339,6 @@ function FlashListContent() {
                       />
                     </td>
 
-                    {/* 中国語訳（中国語教材のみ） */}
                     {showLang2Sub && (
                       <td className="px-3 py-3 text-base text-red-700 font-semibold">
                         <RedBlock
@@ -372,7 +349,6 @@ function FlashListContent() {
                       </td>
                     )}
 
-                    {/* 中国語訳（英語教材のみ・lang3_sub） */}
                     {showLang3Sub && (
                       <td className="px-3 py-3 text-base text-red-700 font-semibold">
                         <RedBlock
@@ -383,7 +359,6 @@ function FlashListContent() {
                       </td>
                     )}
 
-                    {/* 例文 */}
                     <td className="px-3 py-3 text-sm text-blue-700 max-w-xs">
                       <RedBlock
                         text={card.lang3}
@@ -399,7 +374,6 @@ function FlashListContent() {
         </div>
       )}
 
-      {/* 下部ボタン */}
       <div className="fixed bottom-0 left-0 right-0 bg-white border-t px-4 py-3 flex gap-3">
         <button
           onClick={() => router.back()}
