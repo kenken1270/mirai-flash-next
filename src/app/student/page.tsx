@@ -25,55 +25,69 @@ export default function StudentHomePage() {
   const doneCount = todayTasks.filter(t => t.is_done === 1).length
   const progress = todayTasks.length > 0 ? Math.round((doneCount / todayTasks.length) * 100) : 0
 
-  async function toggleDone(task: PlanRow) {
+  async function toggleDone(e: React.MouseEvent, task: PlanRow) {
+    e.stopPropagation() // 親要素のクリックイベント（ページ遷移）を防ぐ
     const nd = task.is_done === 1 ? 0 : 1
     await updatePlan(task.id, { is_done: nd })
     setPlans(await loadPlans(user?.username || ''))
   }
 
-  if (loading) return <div className="p-10 text-center animate-pulse text-yellow-600 font-bold">🐕 準備中...</div>
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFDF0] animate-pulse text-yellow-600 font-bold">🐕 作戦会議中...</div>
 
   return (
-    <div className="flex-1 flex flex-col space-y-6 p-4">
-      {/* ユーザープロフィール */}
+    <div className="flex-1 flex flex-col space-y-6 p-4 bg-[#FFFDF0]">
+      {/* ユーザープロフィール（色味を柔らかく調整） */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border-2 border-yellow-100 flex items-center gap-4">
-        <div className="w-16 h-16 bg-yellow-400 rounded-full flex items-center justify-center text-3xl shadow-inner border-2 border-white">🐶</div>
+        <div className="w-14 h-14 bg-yellow-100 rounded-full flex items-center justify-center text-3xl shadow-inner">🐶</div>
         <div className="flex-1">
-          <h2 className="font-black text-lg text-gray-800">{user?.nickname || user?.username} さん</h2>
-          <p className="text-xs text-gray-400 font-bold">Lv.{user?.grade_num || 1} · {user?.current_points || 0} EXP</p>
-          <div className="h-1.5 w-full bg-gray-100 rounded-full mt-2 overflow-hidden">
+          <h2 className="font-black text-base text-gray-700">{user?.nickname || user?.username} さん</h2>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Level {user?.grade_num || 1} · {user?.current_points || 0} EXP</p>
+          <div className="h-1.5 w-full bg-gray-50 rounded-full mt-2 overflow-hidden border border-gray-100">
             <div className="h-full bg-yellow-400" style={{ width: '40%' }}></div>
           </div>
         </div>
       </div>
 
-      {/* 今日の進捗 */}
-      <div className="space-y-2">
+      {/* 今日のミッション（クリックで学習ページへ） */}
+      <div className="space-y-3">
         <div className="flex justify-between items-end px-1">
-          <h3 className="font-black text-gray-400 text-xs uppercase tracking-widest">Today's Missions</h3>
-          <span className="text-xs font-black text-indigo-500">{doneCount} / {todayTasks.length} 完了</span>
+          <h3 className="font-black text-gray-400 text-[10px] uppercase tracking-[0.2em]">Today's Missions</h3>
+          <span className="text-[10px] font-black text-indigo-400">{doneCount} / {todayTasks.length} Done</span>
         </div>
-        <div className="bg-white p-6 rounded-[2rem] shadow-md border-2 border-yellow-400 text-center space-y-4">
+        
+        <div className="bg-white p-5 rounded-[2.5rem] shadow-md border-2 border-yellow-200">
           {todayTasks.length === 0 ? (
-            <div className="py-4 space-y-3">
-              <p className="text-gray-400 font-bold italic">今日はまだクエストがないよ</p>
-              <button onClick={() => router.push('/student/plan')} className="bg-gray-900 text-yellow-400 px-6 py-2 rounded-full font-black text-sm">🗓️ 計画をたてる</button>
+            <div className="py-6 text-center space-y-4">
+              <p className="text-gray-300 font-bold italic text-sm">今日はまだクエストがないよ</p>
+              <button onClick={() => router.push('/student/plan')} className="bg-yellow-400 text-gray-800 px-8 py-3 rounded-2xl font-black text-sm shadow-md active:scale-95 transition">🗓️ 計画をたてる</button>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="space-y-4">
               <div className="flex items-center gap-3">
-                <div className="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden">
-                  <div className="h-full bg-green-500 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                <div className="flex-1 h-3 bg-gray-50 rounded-full overflow-hidden border border-gray-100">
+                  <div className="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
                 </div>
-                <span className="font-black text-green-600">{progress}%</span>
+                <span className="font-black text-green-500 text-sm">{progress}%</span>
               </div>
-              <div className="divide-y divide-gray-50 pt-2 text-left">
+              
+              <div className="space-y-2 pt-2">
                 {todayTasks.map(t => (
-                  <div key={t.id} className="flex items-center gap-3 py-3 group">
-                    <button onClick={() => toggleDone(t)} className={`w-8 h-8 rounded-full border-2 flex items-center justify-center transition-all ${t.is_done ? 'bg-green-500 border-green-500' : 'bg-white border-gray-200'}`}>
-                      {t.is_done === 1 && <span className="text-white text-xs">✓</span>}
+                  <div 
+                    key={t.id} 
+                    onClick={() => router.push(`/student/study?taskId=${t.id}`)}
+                    className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all active:scale-[0.98] cursor-pointer ${t.is_done ? 'bg-gray-50 border-gray-100' : 'bg-white border-yellow-50 hover:border-yellow-200 shadow-sm'}`}
+                  >
+                    <button 
+                      onClick={(e) => toggleDone(e, t)} 
+                      className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${t.is_done === 1 ? 'bg-green-500 border-green-500 shadow-inner' : 'bg-white border-gray-200'}`}
+                    >
+                      {t.is_done === 1 && <span className="text-white font-black text-sm">✓</span>}
                     </button>
-                    <span className={`font-bold text-sm flex-1 ${t.is_done ? 'text-gray-300 line-through' : 'text-gray-700'}`}>{t.task_name}</span>
+                    <div className="flex-1">
+                      <p className={`font-bold text-sm ${t.is_done ? 'text-gray-300 line-through' : 'text-gray-700'}`}>{t.task_name}</p>
+                      <p className="text-[10px] text-indigo-300 font-bold mt-0.5 uppercase tracking-tighter">▶︎ タップして学習を開始</p>
+                    </div>
+                    <span className="text-gray-200 text-xl">›</span>
                   </div>
                 ))}
               </div>
@@ -82,15 +96,15 @@ export default function StudentHomePage() {
         </div>
       </div>
 
-      {/* クイックリンク（特訓） */}
-      <div className="grid grid-cols-2 gap-3">
-        <button onClick={() => router.push('/flash')} className="bg-white border-2 border-indigo-100 p-4 rounded-3xl shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
+      {/* サブアクション（色味を柔らかく） */}
+      <div className="grid grid-cols-2 gap-4">
+        <button onClick={() => router.push('/flash')} className="bg-white border-2 border-indigo-50 p-5 rounded-[2rem] shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
           <span className="text-3xl">🃏</span>
-          <span className="font-black text-xs text-indigo-600">単語の特訓</span>
+          <span className="font-black text-[10px] text-indigo-400 uppercase tracking-widest">Training</span>
         </button>
-        <button onClick={() => router.push('/student/test')} className="bg-white border-2 border-orange-100 p-4 rounded-3xl shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
+        <button onClick={() => router.push('/student/test')} className="bg-white border-2 border-orange-50 p-5 rounded-[2rem] shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
           <span className="text-3xl">📝</span>
-          <span className="font-black text-xs text-orange-600">小テスト</span>
+          <span className="font-black text-[10px] text-orange-400 uppercase tracking-widest">Test</span>
         </button>
       </div>
     </div>
