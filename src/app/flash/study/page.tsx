@@ -92,15 +92,17 @@ function StudyContent() {
       if (startNo > 1)  query = query.gte('item_no', startNo)
       if (endNo < 9999) query = query.lte('item_no', endNo)
 
-      const [cardsRes, logsRes, setRes, userRes] = await Promise.all([
-        query,
-        supabase.from('review_logs').select('*').eq('username', uname),
-        supabase.from('flashcard_sets')
-          .select('lang1_label,lang2_label,lang1_tts_lang,lang2_tts_lang,tts_lang')
-          .eq('id', setId).limit(1),
-        supabase.from('users')
-          .select('base_daily_limit,lang').eq('username', uname).limit(1),
-      ])
+      const cardsRes = await query
+      const logsRes  = await supabase.from('review_logs').select('*').eq('username', uname)
+      const setRes   = await supabase.from('flashcard_sets')
+        .select('lang1_label,lang2_label,lang1_tts_lang,lang2_tts_lang,tts_lang')
+        .eq('id', setId).limit(1)
+      const userRes  = await supabase.from('users')
+        .select('base_daily_limit,lang').eq('username', uname).limit(1)
+      console.log('cardsRes:', cardsRes.data?.length, cardsRes.error?.message)
+      console.log('logsRes:', logsRes.data?.length, logsRes.error?.message)
+      console.log('setRes:', setRes.data, setRes.error?.message)
+      console.log('userRes:', userRes.data, userRes.error?.message)
 
       const allCards: Card[] = cardsRes.data ?? []
       const allLogs: ReviewLog[] = logsRes.data ?? []
