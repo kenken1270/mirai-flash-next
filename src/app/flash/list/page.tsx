@@ -20,6 +20,11 @@ type Card = {
   difficulty: number
 }
 
+type BookInfo = {
+  lang1_label: string
+  lang2_label: string
+}
+
 function getDifficultyRowColor(difficulty: number): string {
   switch (difficulty) {
     case 1: return 'bg-green-50'
@@ -30,16 +35,6 @@ function getDifficultyRowColor(difficulty: number): string {
   }
 }
 
-function detectLang(lang1: string): 'zh' | 'en' | 'ja' {
-  if (!lang1) return 'ja'
-  const code = lang1.charCodeAt(0)
-  if (code >= 0x4E00 && code <= 0x9FFF) return 'zh'
-  if (code >= 0x3040 && code <= 0x30FF) return 'ja'
-  if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) return 'en'
-  return 'ja'
-}
-
-// 赤ブロックコンポーネント：タップで1セルめくれる
 function RedBlock({
   text,
   hidden,
@@ -55,7 +50,7 @@ function RedBlock({
   return (
     <button
       onClick={e => { e.stopPropagation(); onReveal() }}
-      className="inline-block bg-red-500 rounded px-2 py-0.5 min-w-[2.5rem] text-red-500 select-none cursor-pointer hover:bg-red-400 transition"
+      className="inline-block bg-red-500 rounded px-3 py-0.5 min-w-[3rem] text-red-500 select-none cursor-pointer hover:bg-red-400 transition"
       style={{ userSelect: 'none' }}
       aria-label="タップして表示"
     >
@@ -75,20 +70,48 @@ function FlashListContent() {
   const end = Number(searchParams.get('end') ?? 9999)
 
   const [cards, setCards] = useState<Card[]>([])
+  const [bookInfo, setBookInfo] = useState<BookInfo>({ lang1_label: '単語', lang2_label: '日本語' })
   const [loading, setLoading] = useState(true)
   const [searchText, setSearchText] = useState('')
   const [diffFilter, setDiffFilter] = useState<number | null>(null)
 
   const [redSheetMode, setRedSheetMode] = useState(false)
-  // 隠す列をチェックボックスで選択
   const [hideTargets, setHideTargets] = useState<Set<string>>(new Set(['lang1']))
-  // セルごとの開示状態: key = `${cardId}_${field}`
   const [revealedCells, setRevealedCells] = useState<Set<string>>(new Set())
   const [revealAll, setRevealAll] = useState(false)
 
   useEffect(() => {
-    async function fetchCards() {
+    async function fetchData() {
       setLoading(true)
+
+      // book_id の特定（setId経由 or bookId直接）
+      let resolvedBookId: number | null = bookId ? Number(bookId) : null
+
+      if (setId && !resolvedBookId) {
+        const { data: setData } = await supabase
+          .from('flashcard_sets')
+          .select('book_id')
+          .eq('id', Number(setId))
+          .single()
+        if (setData) resolvedBookId = setData.book_id
+      }
+
+      // flashcard_books から lang1_label / lang2_label を取得
+      if (resolvedBookId) {
+        const { data: bookData } = await supabase
+          .from('flashcard_books')
+          .select('lang1_label, lang2_label')
+          .eq('id', resolvedBookId)
+          .single()
+        if (bookData) {
+          setBookInfo({
+            lang1_label: bookData.lang1_label ?? '単語',
+            lang2_label: bookData.lang2_label ?? '日本語',
+          })
+        }
+      }
+
+      // カード取得
       let query = supabase
         .from('flashcards_v3')
         .select('id, item_no, lang1, lang1_sub, lang2, lang2_sub, lang3, difficulty')
@@ -112,7 +135,7 @@ function FlashListContent() {
       setCards(data ?? [])
       setLoading(false)
     }
-    fetchCards()
+    fetchData()
   }, [setId, bookId, start, end])
 
   const toggleHideTarget = (target: string) => {
@@ -121,7 +144,6 @@ function FlashListContent() {
       if (next.has(target)) { next.delete(target) } else { next.add(target) }
       return next
     })
-    // チェック変更時は開示状態リセット
     setRevealedCells(new Set())
     setRevealAll(false)
   }
@@ -141,16 +163,6 @@ function FlashListContent() {
     return !revealedCells.has(`${cardId}_${field}`)
   }
 
-  const handleRevealAll = () => {
-    setRevealAll(true)
-    setRevealedCells(new Set())
-  }
-
-  const handleHideAll = () => {
-    setRevealAll(false)
-    setRevealedCells(new Set())
-  }
-
   const filtered = cards.filter(c => {
     if (diffFilter && c.difficulty !== diffFilter) return false
     if (searchText) {
@@ -163,6 +175,23 @@ function FlashListContent() {
     }
     return true
   })
+
+  // lang1_label に応じてピンイン列ラベルを決定
+  const pinyin_label = bookInfo.lang1_label === '中国語' ? 'ピンイン'
+    : bookInfo.lang1_label === '英語' ? '発音記号'
+    : 'よみ'
+
+  // 中国語訳列は中国語教材のみ表示
+  const showLang2Sub = bookInfo.lang1_label === '中国語'
+
+  // チェックボックスの選択肢（教材に応じて動的）
+  const hideOptions = [
+    { key: 'lang1',     label: bookInfo.lang1_label },
+    { key: 'lang1_sub', label: pinyin_label },
+    { key: 'lang2',     label: bookInfo.lang2_label },
+    ...(showLang2Sub ? [{ key: 'lang2_sub', label: '中国語訳' }] : []),
+    { key: 'lang3',     label: '例文' },
+  ]
 
   if (loading) {
     return (
@@ -188,7 +217,7 @@ function FlashListContent() {
       <div className="px-4 py-3 bg-white border-b space-y-2">
         <input
           type="text"
-          placeholder="🔍 単語・日本語・ピンインで検索"
+          placeholder="🔍 単語・日本語で検索"
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
           className="w-full border border-gray-300 rounded-xl px-4 py-2 text-base focus:outline-none focus:ring-2 focus:ring-yellow-400"
@@ -223,18 +252,18 @@ function FlashListContent() {
               redSheetMode ? 'bg-red-500 text-white' : 'bg-white border border-red-300 text-red-500'
             }`}
           >
-            🟥 赤シート{redSheetMode ? 'ON' : 'OFF'}
+            🟥 赤シート{redSheetMode ? ' ON' : ' OFF'}
           </button>
           {redSheetMode && (
             <>
               <button
-                onClick={handleRevealAll}
+                onClick={() => { setRevealAll(true); setRevealedCells(new Set()) }}
                 className="px-3 py-2 rounded-xl border font-bold text-base bg-white border-gray-300 text-gray-700"
               >
                 👁 全て表示
               </button>
               <button
-                onClick={handleHideAll}
+                onClick={() => { setRevealAll(false); setRevealedCells(new Set()) }}
                 className="px-3 py-2 rounded-xl border font-bold text-base bg-white border-gray-300 text-gray-700"
               >
                 🙈 全て隠す
@@ -243,30 +272,23 @@ function FlashListContent() {
           )}
         </div>
 
-        {/* チェックボックスで隠す列を選択 */}
         {redSheetMode && (
-          <div className="flex gap-4 flex-wrap">
-            {[
-              { key: 'lang1', label: '中国語' },
-              { key: 'lang1_sub', label: 'ピンイン' },
-              { key: 'lang2', label: '日本語' },
-              { key: 'lang2_sub', label: '中国語訳' },
-              { key: 'lang3', label: '例文' },
-            ].map(({ key, label }) => (
-              <label key={key} className="flex items-center gap-1 cursor-pointer text-base font-bold">
-                <input
-                  type="checkbox"
-                  checked={hideTargets.has(key)}
-                  onChange={() => toggleHideTarget(key)}
-                  className="w-4 h-4 accent-red-500"
-                />
-                <span className="text-gray-700">{label}</span>
-              </label>
-            ))}
-          </div>
-        )}
-        {redSheetMode && (
-          <p className="text-sm text-red-500 font-bold">🟥 赤いブロックをタップすると1つずつ表示されます</p>
+          <>
+            <div className="flex gap-4 flex-wrap">
+              {hideOptions.map(({ key, label }) => (
+                <label key={key} className="flex items-center gap-1 cursor-pointer text-base font-bold">
+                  <input
+                    type="checkbox"
+                    checked={hideTargets.has(key)}
+                    onChange={() => toggleHideTarget(key)}
+                    className="w-4 h-4 accent-red-500"
+                  />
+                  <span className="text-gray-700">{label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-sm text-red-500 font-bold">🟥 赤いブロックをタップすると1つずつ表示されます</p>
+          </>
         )}
       </div>
 
@@ -279,10 +301,12 @@ function FlashListContent() {
             <thead>
               <tr className="bg-yellow-100 text-gray-700 text-base">
                 <th className="px-2 py-2 text-center w-8">#</th>
-                <th className="px-3 py-2 text-left">中国語</th>
-                <th className="px-3 py-2 text-left">ピンイン</th>
-                <th className="px-3 py-2 text-left">日本語</th>
-                <th className="px-3 py-2 text-left text-red-600">中国語訳</th>
+                <th className="px-3 py-2 text-left">{bookInfo.lang1_label}</th>
+                <th className="px-3 py-2 text-left">{pinyin_label}</th>
+                <th className="px-3 py-2 text-left">{bookInfo.lang2_label}</th>
+                {showLang2Sub && (
+                  <th className="px-3 py-2 text-left text-red-600">中国語訳</th>
+                )}
                 <th className="px-3 py-2 text-left text-blue-600">例文</th>
               </tr>
             </thead>
@@ -293,7 +317,7 @@ function FlashListContent() {
                   <tr key={card.id} className={`${rowColor} border-b border-gray-200`}>
                     <td className="px-2 py-3 text-center text-gray-400 text-sm font-mono">{card.item_no}</td>
 
-                    {/* 中国語 */}
+                    {/* lang1（英語 or 中国語 or 日本語） */}
                     <td className="px-3 py-3 font-bold text-xl text-gray-900">
                       <RedBlock
                         text={card.lang1}
@@ -302,7 +326,7 @@ function FlashListContent() {
                       />
                     </td>
 
-                    {/* ピンイン */}
+                    {/* ピンイン / 発音記号 */}
                     <td className="px-3 py-3 text-base text-gray-500 italic">
                       <RedBlock
                         text={card.lang1_sub}
@@ -311,7 +335,7 @@ function FlashListContent() {
                       />
                     </td>
 
-                    {/* 日本語 */}
+                    {/* 日本語訳 */}
                     <td className="px-3 py-3 text-base text-gray-800">
                       <RedBlock
                         text={card.lang2}
@@ -320,14 +344,16 @@ function FlashListContent() {
                       />
                     </td>
 
-                    {/* 中国語訳 */}
-                    <td className="px-3 py-3 text-base text-red-700 font-semibold">
-                      <RedBlock
-                        text={card.lang2_sub}
-                        hidden={isCellHidden(card.id, 'lang2_sub')}
-                        onReveal={() => revealCell(card.id, 'lang2_sub')}
-                      />
-                    </td>
+                    {/* 中国語訳（中国語教材のみ） */}
+                    {showLang2Sub && (
+                      <td className="px-3 py-3 text-base text-red-700 font-semibold">
+                        <RedBlock
+                          text={card.lang2_sub}
+                          hidden={isCellHidden(card.id, 'lang2_sub')}
+                          onReveal={() => revealCell(card.id, 'lang2_sub')}
+                        />
+                      </td>
+                    )}
 
                     {/* 例文 */}
                     <td className="px-3 py-3 text-sm text-blue-700 max-w-xs">
