@@ -12,9 +12,12 @@ export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<'realtime' | 'resources' | 'tasks'>('resources')
   const [resources, setResources] = useState<Resource[]>([])
   const [loading, setLoading] = useState(true)
-  const [isAdding, setIsAddding] = useState(false)
   
+  // 選択・管理用ステート
+  const [selectedMaterial, setSelectedMaterial] = useState<string | null>(null)
+  const [subTab, setSubTab] = useState<'page' | 'common'>('page')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [isAdding, setIsAdding] = useState(false)
   const [form, setForm] = useState({ 
     material_name: '', page_no: '', video_url: '', explanation: '', hint_text: '', resource_type: 'page', image_url: '' 
   })
@@ -25,121 +28,116 @@ export default function AdminPage() {
     setLoading(true)
     const { data } = await supabase.from('learning_resources').select('*')
       .order('material_name', { ascending: true })
-      .order('resource_type', { ascending: false })
       .order('page_no', { ascending: true })
     setResources(data || [])
     setLoading(false)
   }
 
-  const groupedResources = useMemo(() => {
-    return resources.reduce((acc, res) => {
-      const key = res.material_name || '未分類'
-      if (!acc[key]) acc[key] = []
-      acc[key].push(res)
-      return acc
-    }, {} as Record<string, Resource[]>)
-  }, [resources])
+  const materials = useMemo(() => Array.from(new Set(resources.map(r => r.material_name))), [resources])
+  
+  const filteredResources = useMemo(() => {
+    return resources.filter(r => r.material_name === selectedMaterial && r.resource_type === subTab)
+  }, [resources, selectedMaterial, subTab])
 
   async function handleSave() {
+    const dataToSave = { ...form, material_name: selectedMaterial || form.material_name }
     if (editingId) {
-      const { error } = await supabase.from('learning_resources').update(form).eq('id', editingId)
-      if (error) alert(error.message); else { setEditingId(null); fetchResources(); }
+      await supabase.from('learning_resources').update(dataToSave).eq('id', editingId)
     } else {
-      const { error } = await supabase.from('learning_resources').insert([form])
-      if (error) alert(error.message); else { setIsAddding(false); fetchResources(); }
+      await supabase.from('learning_resources').insert([dataToSave])
     }
-    setForm({ material_name: '', page_no: '', video_url: '', explanation: '', hint_text: '', resource_type: 'page', image_url: '' })
-  }
-
-  const openEdit = (res: Resource) => {
-    setEditingId(res.id)
-    setForm({ ...res, image_url: res.image_url || '' })
-    setIsAddding(true)
+    setEditingId(null); setIsAdding(false); fetchResources()
   }
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-200 font-sans pb-20">
-      <header className="bg-slate-900 border-b border-slate-800 p-4 flex justify-between items-center sticky top-0 z-30">
+    <div className="min-h-screen bg-[#F8FAFC] text-slate-800 font-sans pb-20">
+      {/* ヘッダー：目に優しい配色 */}
+      <header className="bg-white border-b border-slate-200 p-4 flex justify-between items-center sticky top-0 z-30 shadow-sm">
         <div className="flex items-center gap-3">
-          <span className="text-2xl">👨‍🏫</span>
-          <h1 className="font-black text-lg tracking-tighter text-yellow-400 uppercase">Mirai Admin</h1>
+          <span className="text-2xl">🐕</span>
+          <h1 className="font-black text-lg tracking-tighter text-indigo-900 uppercase">Mirai Admin</h1>
         </div>
-        <div className="flex bg-slate-800 rounded-xl p-1">
+        <div className="flex bg-slate-100 rounded-xl p-1">
           {(['realtime', 'resources', 'tasks'] as const).map(t => (
-            <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition ${activeTab===t ? 'bg-yellow-400 text-gray-900' : 'text-slate-500'}`}>{t}</button>
+            <button key={t} onClick={() => setActiveTab(t)} className={`px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition ${activeTab===t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400'}`}>{t}</button>
           ))}
         </div>
       </header>
 
-      <main className="p-4 max-w-5xl mx-auto">
-        {activeTab === 'realtime' && (
-          <div className="py-10 text-center text-gray-500 italic">リアルタイム監視画面（準備中...）</div>
-        )}
-
+      <main className="max-w-6xl mx-auto flex h-[calc(100-64px)]">
         {activeTab === 'resources' && (
-          <div className="space-y-8">
-            <div className="flex justify-between items-center">
-              <h2 className="text-xl font-black flex items-center gap-2">📦 教材ライブラリ <span className="text-xs font-normal text-slate-500">全 {resources.length} 件</span></h2>
-              <button onClick={() => {setIsAddding(!isAdding); setEditingId(null)}} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-bold text-sm shadow-lg hover:bg-indigo-500 transition">
-                {isAdding ? '✕ 閉じる' : '＋ 新規コンテンツ'}
-              </button>
+          <>
+            {/* 左サイド：教材選択ツリー */}
+            <div className="w-64 bg-white border-r border-slate-200 p-4 space-y-4 overflow-y-auto hidden md:block">
+              <h2 className="text-xs font-black text-slate-400 uppercase tracking-widest">Library</h2>
+              <div className="space-y-1">
+                {materials.map(m => (
+                  <button key={m} onClick={() => setSelectedMaterial(m)} className={`w-full text-left px-3 py-2 rounded-xl text-sm font-bold transition ${selectedMaterial === m ? 'bg-indigo-50 text-indigo-600 border-l-4 border-indigo-600' : 'text-slate-500 hover:bg-slate-50'}`}>
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {isAdding && (
-              <div className="bg-slate-900 p-6 rounded-3xl border-2 border-indigo-500/50 shadow-2xl space-y-4 animate-in slide-in-from-top-4">
-                <h3 className="font-black text-indigo-400">{editingId ? '📝 コンテンツを編集' : '✨ 新しい解説を登録'}</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <input value={form.material_name} onChange={e => setForm({...form, material_name: e.target.value})} placeholder="教材名" className="bg-slate-800 border-none rounded-xl p-3 text-sm" />
-                  <input value={form.page_no} onChange={e => setForm({...form, page_no: e.target.value})} placeholder="ページ番号" className="bg-slate-800 border-none rounded-xl p-3 text-sm" />
+            {/* 右メイン：コンテンツ管理エリア */}
+            <div className="flex-1 p-6 space-y-6 overflow-y-auto">
+              {!selectedMaterial ? (
+                <div className="h-full flex flex-col items-center justify-center text-slate-300 space-y-4">
+                  <span className="text-6xl">📚</span>
+                  <p className="font-bold">左のリストから教材を選んでね</p>
                 </div>
-                <div className="flex bg-slate-800 p-1 rounded-xl w-fit">
-                  {(['page','common'] as const).map(t => (
-                    <button key={t} onClick={() => setForm({...form, resource_type: t})} className={`px-4 py-1 rounded-lg text-[10px] font-black uppercase ${form.resource_type===t ? 'bg-indigo-500 text-white' : 'text-slate-500'}`}>{t === 'page' ? 'ページ解説' : '教材の基礎'}</button>
-                  ))}
-                </div>
-                <input value={form.video_url} onChange={e => setForm({...form, video_url: e.target.value})} placeholder="動画URL (YouTube)" className="w-full bg-slate-800 border-none rounded-xl p-3 text-sm" />
-                <input value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})} placeholder="画像URL" className="w-full bg-slate-800 border-none rounded-xl p-3 text-sm" />
-                <input value={form.hint_text} onChange={e => setForm({...form, hint_text: e.target.value})} placeholder="一言アドバイス" className="w-full bg-slate-800 border-none rounded-xl p-3 text-sm" />
-                <textarea value={form.explanation} onChange={e => setForm({...form, explanation: e.target.value})} rows={5} placeholder="詳細な解説" className="w-full bg-slate-800 border-none rounded-xl p-3 text-sm"></textarea>
-                <button onClick={handleSave} className="w-full py-4 bg-indigo-600 rounded-2xl font-black shadow-xl active:scale-95 transition">この内容で保存する</button>
-              </div>
-            )}
-
-            <div className="space-y-10">
-              {Object.entries(groupedResources).map(([material, items]) => (
-                <section key={material} className="space-y-3">
-                  <div className="flex items-center gap-2 px-1">
-                    <span className="w-1.5 h-5 bg-yellow-400 rounded-full"></span>
-                    <h3 className="font-black text-slate-300">{material}</h3>
+              ) : (
+                <div className="space-y-6 animate-in fade-in duration-300">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Editing Material</p>
+                      <h2 className="text-2xl font-black text-slate-800">{selectedMaterial}</h2>
+                    </div>
+                    <button onClick={() => {setIsAdding(true); setEditingId(null); setForm({material_name: selectedMaterial, page_no:'', video_url:'', explanation:'', hint_text:'', resource_type: subTab, image_url:''})}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition">＋ 新規追加</button>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    {items.map(res => (
-                      <div key={res.id} onClick={() => openEdit(res)} className="bg-slate-900 border border-slate-800 p-4 rounded-2xl hover:border-slate-600 transition cursor-pointer group relative overflow-hidden">
-                        <div className={`absolute top-0 right-0 px-2 py-0.5 text-[8px] font-black uppercase ${res.resource_type==='common' ? 'bg-orange-600 text-white' : 'bg-slate-800 text-slate-500'}`}>{res.resource_type}</div>
+
+                  {/* サブタブ切替 */}
+                  <div className="flex border-b border-slate-200 gap-8">
+                    <button onClick={() => setSubTab('page')} className={`pb-3 text-sm font-black transition-all ${subTab==='page' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>📖 ページ別解説</button>
+                    <button onClick={() => setSubTab('common')} className={`pb-3 text-sm font-black transition-all ${subTab==='common' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>🛡️ 共通保管庫</button>
+                  </div>
+
+                  {/* 編集フォーム（モーダル風表示） */}
+                  {(isAdding || editingId) && (
+                    <div className="bg-white p-6 rounded-3xl border-2 border-indigo-100 shadow-xl space-y-4 animate-in slide-in-from-top-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <input value={form.page_no} onChange={e => setForm({...form, page_no: e.target.value})} placeholder={subTab==='page' ? "ページ番号 (例: p.6)" : "保管庫の名前 (例: 五十音図)"} className="bg-slate-50 border-none rounded-xl p-3 text-sm" />
+                        <input value={form.video_url} onChange={e => setForm({...form, video_url: e.target.value})} placeholder="YouTube URL" className="bg-slate-50 border-none rounded-xl p-3 text-sm" />
+                      </div>
+                      <input value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})} placeholder="画像URL (Public URL)" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm" />
+                      <input value={form.hint_text} onChange={e => setForm({...form, hint_text: e.target.value})} placeholder="一言アドバイス" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm" />
+                      <textarea value={form.explanation} onChange={e => setForm({...form, explanation: e.target.value})} rows={subTab==='common' ? 3 : 6} placeholder={subTab==='common' ? "保管庫の概要（空でもOK）" : "詳しい解説内容"} className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm"></textarea>
+                      <div className="flex gap-3">
+                        <button onClick={() => {setIsAdding(false); setEditingId(null)}} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold">キャンセル</button>
+                        <button onClick={handleSave} className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-black shadow-lg">保存する</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* コンテンツ一覧 */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {filteredResources.map(res => (
+                      <div key={res.id} onClick={() => {setEditingId(res.id); setForm({...res, image_url: res.image_url||''}); setIsAdding(false)}} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:shadow-md transition cursor-pointer group">
                         <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-black text-lg group-hover:text-yellow-400 transition">{res.page_no || '共通基礎'}</h4>
-                          <div className="flex gap-1 text-sm">
-                            {res.video_url && <span title="動画あり">📺</span>}
-                            {res.image_url && <span title="画像あり">🖼️</span>}
-                            {res.explanation?.includes('[:zh]') && <span title="多言語対応">🇨🇳</span>}
+                          <h4 className="font-black text-slate-800">{res.page_no || 'No Title'}</h4>
+                          <div className="flex gap-1 text-xs">
+                            {res.video_url && <span>📺</span>}
+                            {res.image_url && <span>🖼️</span>}
                           </div>
                         </div>
-                        <p className="text-xs text-slate-500 line-clamp-2 italic">{res.hint_text || '(ヒント未登録)'}</p>
-                        <div className="mt-3 pt-3 border-t border-slate-800/50 flex justify-between items-center">
-                          <span className="text-[9px] text-slate-600 font-bold uppercase">Update: {new Date(res.created_at).toLocaleDateString()}</span>
-                          <span className="text-[10px] font-black text-indigo-400 opacity-0 group-hover:opacity-100 transition">EDIT ›</span>
-                        </div>
+                        <p className="text-xs text-slate-400 line-clamp-2 italic">{res.hint_text || 'No hint'}</p>
                       </div>
                     ))}
                   </div>
-                </section>
-              ))}
+                </div>
+              )}
             </div>
-          </div>
-        )}
-
-        {activeTab === 'tasks' && (
-          <div className="py-10 text-center text-gray-500 italic">タスク管理画面（準備中...）</div>
+          </>
         )}
       </main>
     </div>
