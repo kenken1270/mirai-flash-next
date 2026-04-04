@@ -184,7 +184,7 @@ function FlashListContent() {
 
   // 中国語訳列：中国語教材はlang2_sub、英語教材はlang3_sub
   const isChinese = bookInfo.lang1_label === '中国語'
-  const isEnglish = bookInfo.lang1_label === '英語' || bookInfo.lang1_label === '英単語'
+  const isEnglish = bookInfo.lang1_label === '英語' || bookInfo.lang1_label === '英単語' || bookInfo.lang1_label === '英検'
   const showLang2Sub = isChinese
   const showLang3Sub = isEnglish
 
