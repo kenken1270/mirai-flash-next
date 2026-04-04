@@ -383,12 +383,30 @@ function StudyContent() {
           {showAnswer && (
             <div className="bg-yellow-50 rounded-3xl shadow border-2 border-yellow-200 p-6 mt-4 flex flex-col items-center gap-3">
               <span className="text-xs text-yellow-600 font-bold self-start">{lang2Label}</span>
-              <p className="text-3xl font-bold text-gray-800 text-center">{card.lang2}</p>
+
+              {/* 日本語訳 */}
+              <div className="w-full bg-white rounded-2xl px-5 py-3 border border-yellow-100 text-center">
+                <p className="text-xs text-gray-400 mb-1">🇯🇵 日本語</p>
+                <p className="text-2xl font-bold text-gray-800">{card.lang2}</p>
+              </div>
+
+              {/* lang2_sub：中国語教材→中国語表示、英語/日本語教材→よみかた表示 */}
               {card.lang2_sub && (
-                <p className="text-sm text-gray-500">{card.lang2_sub}</p>
+                ttsLang1 === 'zh-CN'
+                  ? <div className="w-full bg-red-50 rounded-2xl px-5 py-2 border border-red-100 text-center">
+                      <p className="text-xs text-gray-400 mb-0.5">🇨🇳 中国語</p>
+                      <p className="text-xl font-bold text-red-700">{card.lang2_sub}</p>
+                    </div>
+                  : <div className="w-full bg-yellow-50 rounded-2xl px-5 py-2 border border-yellow-100 text-center">
+                      <p className="text-xs text-gray-400 mb-0.5">🔤 よみかた</p>
+                      <p className="text-base text-yellow-700 font-mono tracking-wide">{card.lang2_sub}</p>
+                    </div>
               )}
+
+              {/* 例文 */}
               {card.lang3 && (
-                <div className="bg-white/80 rounded-2xl px-4 py-2 w-full mt-1">
+                <div className="bg-white/80 rounded-2xl px-4 py-2 w-full">
+                  <p className="text-xs text-gray-400 mb-1">📝 例文</p>
                   <p className="text-sm text-gray-500 text-center italic">{card.lang3}</p>
                 </div>
               )}
