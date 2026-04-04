@@ -188,9 +188,30 @@ function FlashListContent() {
           </div>
         ))}
       </div>
+          {/* 下部固定アクションボタン */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-gray-200 px-4 py-3 flex gap-3 z-30">
+        <button
+          onClick={() => router.back()}
+          className="flex-1 py-3 rounded-xl border border-gray-300 bg-white text-gray-700 font-bold text-sm shadow-sm active:bg-gray-100 transition"
+        >
+          ← 範囲選択
+        </button>
+        <button
+          onClick={() => {
+            const params = new URLSearchParams()
+            if (setId) params.set('id', setId)
+            if (bookId) params.set('bookId', bookId)
+            params.set('start', String(start))
+            params.set('end', String(end))
+            router.push(`/flash/study?${params.toString()}`)
+          }}
+          className="flex-[2] py-3 rounded-xl bg-gradient-to-r from-yellow-400 to-orange-400 text-gray-900 font-bold text-sm shadow-md active:opacity-90 transition flex items-center justify-center gap-2"
+        >
+          🚀 この範囲で学習
+        </button>
+      </div>
     </div>
-  )
-}
+  ) }
 
 export default function FlashListPage() {
   return <Suspense><FlashListContent /></Suspense>
