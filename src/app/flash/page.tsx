@@ -1,462 +1,203 @@
-'use client'
-import { useEffect, useState } from 'react'
+﻿'use client'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-type Book = {
-  id: number
-  title: string
-  subtitle: string
-  publisher: string
-  category: string
-  grade: string
-  cover_emoji: string
-  description: string
-}
+type Book = { id: number; title: string; subtitle: string; category: string; cover_emoji: string }
+type PageGroup = { page_no: number; set_id: number; min_item: number; max_item: number; count: number }
 
-type PageGroup = {
-  page_no: number
-  set_id: number
-  set_name: string
-  min_item: number
-  max_item: number
-  count: number
-}
-
-export default function FlashTopPage() {
+function FlashTopContent() {
   const router = useRouter()
-  const [username, setUsername] = useState('')
   const [books, setBooks] = useState<Book[]>([])
-  const [loading, setLoading] = useState(true)
   const [selectedBook, setSelectedBook] = useState<Book | null>(null)
   const [pageGroups, setPageGroups] = useState<PageGroup[]>([])
-  const [loadingPages, setLoadingPages] = useState(false)
-  const [selectMode, setSelectMode] = useState<'page' | 'word'>('page')
+  const [loading, setLoading] = useState(true)
+  const [rangeMode, setRangeMode] = useState<'page' | 'num'>('page')
+  const [showPageList, setShowPageList] = useState(false)
 
-  // ページ選択
-  const [startPage, setStartPage] = useState(0)
-  const [endPage, setEndPage] = useState(0)
+  // 選択範囲（ページ用）
+  const [startPage, setStartPage] = useState(1)
+  const [endPage, setEndPage] = useState(1)
+  // 選択範囲（番号用）
+  const [startNum, setStartNum] = useState(1)
+  const [endNum, setEndNum] = useState(100)
+  const [absMin, setAbsMin] = useState(1)
+  const [absMax, setAbsMax] = useState(100)
 
-  // 単語番号選択
-  const [totalMin, setTotalMin] = useState(1)
-  const [totalMax, setTotalMax] = useState(100)
-  const [startWord, setStartWord] = useState(1)
-  const [endWord, setEndWord] = useState(100)
-
-  const [wordCount, setWordCount] = useState(0)
-  const [allPages, setAllPages] = useState<number[]>([])
+  const [totalWordCount, setTotalWordCount] = useState(0)
 
   useEffect(() => {
     async function init() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
-      setUsername(uname)
-      const { data: booksData } = await supabase.from('flashcard_books').select('*').order('id')
-      setBooks(booksData ?? [])
+      const { data } = await supabase.from('flashcard_books').select('*').order('id')
+      setBooks(data ?? [])
       setLoading(false)
     }
     init()
-  }, [router])
+  }, [])
 
   async function selectBook(book: Book) {
     setSelectedBook(book)
-    setLoadingPages(true)
-    setStartPage(0)
-    setEndPage(0)
+    const { data: sets } = await supabase.from('flashcard_sets').select('id').eq('book_id', book.id)
+    if (!sets) return
+    const setIds = sets.map(s => s.id)
+    const { data: cards } = await supabase.from('flashcards_v3').select('item_no, page_no, set_id').in('set_id', setIds).order('item_no')
+    if (!cards || cards.length === 0) return
 
-    const { data: setsData } = await supabase
-      .from('flashcard_sets')
-      .select('id, set_name')
-      .eq('book_id', book.id)
-      .order('id')
-
-    if (!setsData || setsData.length === 0) {
-      setPageGroups([])
-      setLoadingPages(false)
-      return
-    }
-
-    const setIds = setsData.map(s => s.id)
-    const setMap = new Map(setsData.map(s => [s.id, s.set_name]))
-
-    const { data: cards } = await supabase
-      .from('flashcards_v3')
-      .select('item_no, page_no, set_id')
-      .in('set_id', setIds)
-      .order('item_no')
-
-    if (!cards || cards.length === 0) {
-      setPageGroups([])
-      setLoadingPages(false)
-      return
-    }
-
-    // 単語番号の全体範囲
     const minNo = Math.min(...cards.map(c => c.item_no))
     const maxNo = Math.max(...cards.map(c => c.item_no))
-    setTotalMin(minNo)
-    setTotalMax(maxNo)
-    setStartWord(minNo)
-    setEndWord(maxNo)
+    setAbsMin(minNo); setAbsMax(maxNo); setStartNum(minNo); setEndNum(Math.min(minNo + 19, maxNo))
 
-    // page_noが設定されているものでページグループ作成
-    const paged = cards.filter(c => c.page_no != null)
-    const pageMap = new Map<number, { set_id: number; min: number; max: number; count: number }>()
-    for (const card of paged) {
-      const p = card.page_no
-      if (!pageMap.has(p)) pageMap.set(p, { set_id: card.set_id, min: card.item_no, max: card.item_no, count: 0 })
-      const entry = pageMap.get(p)!
-      entry.min = Math.min(entry.min, card.item_no)
-      entry.max = Math.max(entry.max, card.item_no)
-      entry.count++
-    }
-
-    const groups: PageGroup[] = Array.from(pageMap.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([page_no, v]) => ({
-        page_no,
-        set_id: v.set_id,
-        set_name: setMap.get(v.set_id) ?? '',
-        min_item: v.min,
-        max_item: v.max,
-        count: v.count,
-      }))
-
+    const pageMap = new Map<number, PageGroup>()
+    cards.filter(c => c.page_no).forEach(c => {
+      if (!pageMap.has(c.page_no)) pageMap.set(c.page_no, { page_no: c.page_no, set_id: c.set_id, min_item: c.item_no, max_item: c.item_no, count: 0 })
+      const g = pageMap.get(c.page_no)!
+      g.min_item = Math.min(g.min_item, c.item_no); g.max_item = Math.max(g.max_item, c.item_no); g.count++
+    })
+    const groups = Array.from(pageMap.values()).sort((a, b) => a.page_no - b.page_no)
     setPageGroups(groups)
-    setAllPages(groups.map(g => g.page_no))
-    if (groups.length > 0) {
-      setStartPage(groups[0].page_no)
-      setEndPage(groups[groups.length - 1].page_no)
-    }
-    setLoadingPages(false)
-  }
-
-  function getPageSelection() {
-    const inRange = pageGroups.filter(p => p.page_no >= startPage && p.page_no <= endPage)
-    if (inRange.length === 0) return { start: totalMin, end: totalMax, count: 0, setId: pageGroups[0]?.set_id ?? 0 }
-    const start = Math.min(...inRange.map(p => p.min_item))
-    const end = Math.max(...inRange.map(p => p.max_item))
-    const count = inRange.reduce((s, p) => s + p.count, 0)
-    const setId = inRange[0].set_id
-    return { start, end, count, setId }
-  }
-
-  function getWordSelection() {
-    return {
-      start: startWord,
-      end: endWord,
-      count: endWord - startWord + 1,
-      setId: pageGroups[0]?.set_id ?? 0,
+    if (groups.length > 0) { 
+      setStartPage(groups[0].page_no); 
+      setEndPage(Math.min(groups[0].page_no + 1, groups[groups.length-1].page_no)) 
     }
   }
 
   useEffect(() => {
-    if (selectMode === 'page' && pageGroups.length > 0 && startPage > 0) {
-      setWordCount(getPageSelection().count)
-    } else if (selectMode === 'word') {
-      setWordCount(Math.max(0, endWord - startWord + 1))
+    if (rangeMode === 'page') {
+      const count = pageGroups.filter(g => g.page_no >= startPage && g.page_no <= endPage).reduce((s, g) => s + g.count, 0)
+      setTotalWordCount(count)
+    } else {
+      setTotalWordCount(Math.max(0, endNum - startNum + 1))
     }
-  }, [startPage, endPage, startWord, endWord, selectMode, pageGroups])
+  }, [startPage, endPage, startNum, endNum, rangeMode, pageGroups])
 
-  function getCategoryColor(category: string) {
-    if (category?.includes('英検')) return 'from-orange-400 to-red-500'
-    if (category?.includes('日本語')) return 'from-blue-500 to-indigo-500'
-    if (category?.includes('中国語')) return 'from-red-500 to-pink-500'
-    return 'from-purple-500 to-indigo-500'
+  const navigate = (mode: string) => {
+    let s, e, setId;
+    if (rangeMode === 'page') {
+      const inRange = pageGroups.filter(g => g.page_no >= startPage && g.page_no <= endPage)
+      if (inRange.length === 0) return
+      s = Math.min(...inRange.map(g => g.min_item))
+      e = Math.max(...inRange.map(g => g.max_item))
+      setId = inRange[0].set_id
+    } else {
+      s = startNum; e = endNum; setId = pageGroups[0]?.set_id || 1
+    }
+    const base = `?id=${setId}&setName=${encodeURIComponent(selectedBook?.title || '')}&start=${s}&end=${e}&bookId=${selectedBook?.id}`
+    router.push(`/flash/${mode}${base}`)
   }
 
-  function navigate(mode: 'list' | 'study' | 'attack') {
-    const sel = selectMode === 'page' ? getPageSelection() : getWordSelection()
-    const setName = encodeURIComponent(selectedBook?.title ?? '')
-    const base = `?id=${sel.setId}&setName=${setName}&start=${sel.start}&end=${sel.end}&bookId=${selectedBook?.id}`
-    if (mode === 'list') router.push('/flash/list' + base)
-    if (mode === 'study') router.push('/flash/study' + base)
-    if (mode === 'attack') router.push('/flash/attack' + base)
-  }
-
-  if (loading) return (
-    <div className="flex flex-col items-center justify-center min-h-screen gap-3">
-      <div className="text-5xl animate-bounce">🃏</div>
-      <p className="text-gray-400">読み込み中...</p>
-    </div>
-  )
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFDF0] text-yellow-600 font-bold animate-pulse text-2xl">🐕 準備中...</div>
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 to-purple-50 pb-10">
-      <header className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-4 py-4 shadow-lg">
-        <div className="max-w-2xl mx-auto flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold">🃏 単語学習</h1>
-            <p className="text-sm opacity-80 mt-0.5">{username} さん</p>
-          </div>
-          <button onClick={() => router.push('/student')}
-            className="text-sm bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-full transition">
-            🏠 ホームへ
-          </button>
-        </div>
+    <div className="min-h-screen bg-[#FFFDF0] pb-10 font-sans text-gray-800">
+      <header className="bg-yellow-400 px-4 py-4 shadow-sm flex items-center justify-between sticky top-0 z-30 text-gray-900">
+        <h1 className="text-xl font-black italic tracking-tighter">MIRAI FLASH</h1>
+        <button onClick={() => router.push('/student')} className="text-sm bg-white/40 px-3 py-1 rounded-full font-bold">🏠 ﾎｰﾑ</button>
       </header>
 
-      <div className="max-w-2xl mx-auto px-4 pt-5 space-y-4">
-
-        <button onClick={() => router.push('/flash/graph')}
-          className="w-full py-3 bg-white rounded-2xl shadow-sm border border-indigo-100 hover:shadow-md hover:border-indigo-300 transition flex items-center justify-center gap-2 text-indigo-600 font-bold">
-          <span className="text-xl">📈</span>学習グラフを見る
-        </button>
-
-        {/* 本一覧 */}
-        {!selectedBook && (
+      <div className="max-w-md mx-auto p-4 space-y-4">
+        {!selectedBook ? (
           <div className="space-y-3">
-            <h2 className="font-bold text-gray-700 px-1">📚 教材を選んでください</h2>
+            <h2 className="text-lg font-bold px-1">📚 教材をえらぶ</h2>
             {books.map(book => (
-              <button key={book.id} onClick={() => selectBook(book)}
-                className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-md hover:border-indigo-200 transition p-4 text-left">
-                <div className="flex items-center gap-4">
-                  <div className={`w-14 h-14 rounded-2xl bg-gradient-to-br ${getCategoryColor(book.category)} flex items-center justify-center flex-shrink-0 shadow text-3xl`}>
-                    {book.cover_emoji}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-bold text-gray-800">{book.title}</p>
-                    {book.subtitle && <p className="text-xs text-gray-400">{book.subtitle}</p>}
-                    <div className="flex gap-2 mt-1">
-                      {book.publisher && <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{book.publisher}</span>}
-                      {book.grade && <span className="text-xs bg-indigo-50 text-indigo-500 px-2 py-0.5 rounded-full">{book.grade}</span>}
-                    </div>
-                  </div>
-                  <span className="text-gray-300 text-2xl">›</span>
+              <button key={book.id} onClick={() => selectBook(book)} className="w-full bg-white p-4 rounded-2xl shadow-sm border-2 border-gray-100 flex items-center gap-4 active:scale-95 transition">
+                <span className="text-3xl">{book.cover_emoji}</span>
+                <div className="text-left flex-1">
+                  <p className="font-black text-gray-800 leading-tight">{book.title}</p>
+                  <p className="text-[10px] text-gray-400 mt-1 uppercase font-bold">{book.category}</p>
                 </div>
+                <span className="text-gray-300">▶︎</span>
               </button>
             ))}
           </div>
-        )}
-
-        {/* ページ・単語選択UI */}
-        {selectedBook && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2">
-              <button onClick={() => setSelectedBook(null)}
-                className="text-sm text-indigo-500 hover:text-indigo-700">
-                ← 教材一覧
-              </button>
-              <span className="text-gray-300">›</span>
-              <span className="text-sm font-bold text-gray-700 truncate">{selectedBook.title}</span>
-            </div>
-
-            <div className={`p-4 rounded-2xl bg-gradient-to-r ${getCategoryColor(selectedBook.category)} text-white shadow`}>
-              <p className="text-2xl">{selectedBook.cover_emoji}</p>
-              <p className="font-bold mt-1">{selectedBook.title}</p>
-              {selectedBook.subtitle && <p className="text-xs opacity-80">{selectedBook.subtitle}</p>}
-            </div>
-
-            {loadingPages ? (
-              <div className="text-center py-8">
-                <div className="text-3xl animate-bounce">📄</div>
-                <p className="text-gray-400 text-sm mt-2">読み込み中...</p>
-              </div>
-            ) : (
-              <div className="space-y-4">
-
-                {/* モード切替タブ */}
-                <div className="bg-white rounded-2xl p-1.5 shadow-sm border border-gray-100 flex gap-1.5">
-                  <button
-                    onClick={() => setSelectMode('page')}
-                    className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${
-                      selectMode === 'page'
-                        ? 'bg-indigo-600 text-white shadow'
-                        : 'text-gray-400 hover:text-indigo-500'
-                    }`}>
-                    📄 ページで選ぶ
-                  </button>
-                  <button
-                    onClick={() => setSelectMode('word')}
-                    className={`flex-1 py-2.5 rounded-xl font-bold text-sm transition ${
-                      selectMode === 'word'
-                        ? 'bg-indigo-600 text-white shadow'
-                        : 'text-gray-400 hover:text-indigo-500'
-                    }`}>
-                    🔢 単語番号で選ぶ
-                  </button>
+        ) : (
+          <div className="space-y-4 animate-in slide-in-from-right duration-300">
+            <button onClick={() => setSelectedBook(null)} className="text-indigo-500 font-bold text-sm flex items-center gap-1">← もどる</button>
+            
+            <div className="bg-white p-5 rounded-3xl shadow-md border-2 border-yellow-200 space-y-4">
+              <div className="flex items-center gap-3 border-b border-gray-50 pb-3">
+                <span className="text-3xl">{selectedBook.cover_emoji}</span>
+                <div className="flex-1">
+                  <h2 className="font-black text-gray-800 text-sm leading-tight">{selectedBook.title}</h2>
+                  <p className="text-[10px] text-indigo-500 font-bold mt-1">
+                    {rangeMode === 'page' ? `p.${startPage} 〜 p.${endPage}` : `No.${startNum} 〜 No.${endNum}`} ({totalWordCount}語)
+                  </p>
                 </div>
+                <div className="flex bg-gray-100 p-1 rounded-lg">
+                  <button onClick={() => setRangeMode('page')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition ${rangeMode === 'page' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>ページ</button>
+                  <button onClick={() => setRangeMode('num')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition ${rangeMode === 'num' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-400'}`}>番号</button>
+                </div>
+              </div>
 
-                {/* ページ選択モード */}
-                {selectMode === 'page' && (
+              {rangeMode === 'page' ? (
+                <div className="space-y-4 px-1">
                   <div className="space-y-3">
-                    {pageGroups.length === 0 ? (
-                      <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 text-center">
-                        <p className="text-amber-600 text-sm">このセクションはページデータが未設定です</p>
-                        <p className="text-amber-500 text-xs mt-1">「単語番号で選ぶ」をお使いください</p>
-                      </div>
-                    ) : (
-                      <>
-                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                          <p className="text-xs font-bold text-gray-400 mb-3">
-                            📄 ページをタップして範囲を選択
-                          </p>
-                          <div className="grid grid-cols-4 gap-2">
-                            {pageGroups.map(pg => {
-                              const inRange = pg.page_no >= startPage && pg.page_no <= endPage
-                              const isEdge = pg.page_no === startPage || pg.page_no === endPage
-                              return (
-                                <button key={pg.page_no}
-                                  onClick={() => {
-                                    if (pg.page_no < startPage) {
-                                      setStartPage(pg.page_no)
-                                    } else if (pg.page_no > endPage) {
-                                      setEndPage(pg.page_no)
-                                    } else if (pg.page_no === startPage && pg.page_no !== endPage) {
-                                      setStartPage(pageGroups[pageGroups.findIndex(p => p.page_no === endPage)].page_no)
-                                      setEndPage(pageGroups[pageGroups.findIndex(p => p.page_no === endPage)].page_no)
-                                    } else {
-                                      setStartPage(pg.page_no)
-                                      setEndPage(pg.page_no)
-                                    }
-                                  }}
-                                  className={`py-2 px-1 rounded-xl text-sm font-bold transition border ${
-                                    isEdge
-                                      ? 'bg-indigo-600 text-white border-indigo-700 ring-2 ring-indigo-300'
-                                      : inRange
-                                      ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
-                                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-indigo-300'
-                                  }`}>
-                                  p.{pg.page_no}
-                                  <span className="block text-xs opacity-70">{pg.count}語</span>
-                                </button>
-                              )
-                            })}
-                          </div>
-                        </div>
-
-                        {/* ページ手動入力 */}
-                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                          <p className="text-xs font-bold text-gray-400 mb-2">✏️ ページ番号を直接入力</p>
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1">
-                              <label className="text-xs text-gray-400">開始ページ</label>
-                              <input type="number" value={startPage || ''}
-                                onChange={e => setStartPage(parseInt(e.target.value) || 0)}
-                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-indigo-600 focus:outline-none focus:border-indigo-400 mt-1" />
-                            </div>
-                            <span className="text-gray-400 font-bold mt-5">〜</span>
-                            <div className="flex-1">
-                              <label className="text-xs text-gray-400">終了ページ</label>
-                              <input type="number" value={endPage || ''}
-                                onChange={e => setEndPage(parseInt(e.target.value) || 0)}
-                                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-indigo-600 focus:outline-none focus:border-indigo-400 mt-1" />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* クイック選択 */}
-                        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                          <p className="text-xs font-bold text-gray-400 mb-2">⚡ クイック選択</p>
-                          <div className="flex gap-2 flex-wrap">
-                            {[2,4,6].map(n => {
-                              if (allPages.length < n) return null
-                              const count = pageGroups.filter(p => p.page_no <= allPages[n-1]).reduce((s, p) => s + p.count, 0)
-                              return (
-                                <button key={n}
-                                  onClick={() => { setStartPage(allPages[0]); setEndPage(allPages[n-1]) }}
-                                  className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-sm font-bold hover:bg-indigo-100 transition">
-                                  最初の{count}語
-                                </button>
-                              )
-                            })}
-                            <button
-                              onClick={() => { setStartPage(allPages[0]); setEndPage(allPages[allPages.length-1]) }}
-                              className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-sm font-bold hover:bg-indigo-100 transition">
-                              全部（{pageGroups.reduce((s,p)=>s+p.count,0)}語）
-                            </button>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* 単語番号選択モード */}
-                {selectMode === 'word' && (
-                  <div className="space-y-3">
-                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                      <p className="text-xs font-bold text-gray-400 mb-3">🔢 単語番号で範囲を指定</p>
-                      <div className="flex items-center gap-3">
-                        <div className="flex-1">
-                          <label className="text-xs text-gray-400">開始番号</label>
-                          <input type="number"
-                            value={startWord}
-                            min={totalMin}
-                            max={totalMax}
-                            onChange={e => setStartWord(parseInt(e.target.value) || totalMin)}
-                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-indigo-600 focus:outline-none focus:border-indigo-400 mt-1 text-lg" />
-                        </div>
-                        <span className="text-gray-400 font-bold mt-5">〜</span>
-                        <div className="flex-1">
-                          <label className="text-xs text-gray-400">終了番号</label>
-                          <input type="number"
-                            value={endWord}
-                            min={totalMin}
-                            max={totalMax}
-                            onChange={e => setEndWord(parseInt(e.target.value) || totalMax)}
-                            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-indigo-600 focus:outline-none focus:border-indigo-400 mt-1 text-lg" />
-                        </div>
-                      </div>
-                      <p className="text-xs text-gray-400 text-center mt-2">
-                        この教材の範囲: {totalMin}番 〜 {totalMax}番
-                      </p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-bold text-gray-400 w-8">開始</span>
+                      <input type="range" min={pageGroups[0]?.page_no} max={endPage} value={startPage} onChange={e => setStartPage(Number(e.target.value))} className="flex-1 accent-indigo-500 h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer" />
+                      <span className="font-black text-indigo-600 w-6 text-center text-sm">{startPage}</span>
                     </div>
-
-                    {/* クイック選択 */}
-                    <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                      <p className="text-xs font-bold text-gray-400 mb-2">⚡ クイック選択</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {[10,20,30,50].map(n => (
-                          <button key={n}
-                            onClick={() => { setStartWord(totalMin); setEndWord(Math.min(totalMin + n - 1, totalMax)) }}
-                            className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-sm font-bold hover:bg-indigo-100 transition">
-                            最初の{n}語
-                          </button>
-                        ))}
-                        <button
-                          onClick={() => { setStartWord(totalMin); setEndWord(totalMax) }}
-                          className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-xl text-sm font-bold hover:bg-indigo-100 transition">
-                          全部（{totalMax - totalMin + 1}語）
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] font-bold text-gray-400 w-8">終了</span>
+                      <input type="range" min={startPage} max={pageGroups[pageGroups.length-1]?.page_no} value={endPage} onChange={e => setEndPage(Number(e.target.value))} className="flex-1 accent-indigo-500 h-1.5 bg-gray-100 rounded-lg appearance-none cursor-pointer" />
+                      <span className="font-black text-indigo-600 w-6 text-center text-sm">{endPage}</span>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowPageList(!showPageList)} className="w-full text-center text-[9px] font-bold text-gray-300 uppercase tracking-widest py-1 border-t border-gray-50">
+                    {showPageList ? '▲ 閉じる' : '▼ 全ページ表示'}
+                  </button>
+                  {showPageList && (
+                    <div className="grid grid-cols-6 gap-1 max-h-32 overflow-y-auto p-1">
+                      {pageGroups.map(g => (
+                        <button key={g.page_no} onClick={() => {setStartPage(g.page_no); setEndPage(g.page_no)}} className={`py-1.5 rounded-md text-[10px] font-bold border transition ${g.page_no >= startPage && g.page_no <= endPage ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-gray-50 text-gray-400 border-transparent'}`}>
+                          p.{g.page_no}
                         </button>
-                      </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4 px-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 mb-1">開始番号</p>
+                      <input type="number" value={startNum} onChange={e => setStartNum(Number(e.target.value))} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-3 py-2 font-black text-indigo-600 focus:outline-none focus:border-indigo-300 text-center" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-bold text-gray-400 mb-1">終了番号</p>
+                      <input type="number" value={endNum} onChange={e => setEndNum(Number(e.target.value))} className="w-full bg-gray-50 border-2 border-gray-100 rounded-xl px-3 py-2 font-black text-indigo-600 focus:outline-none focus:border-indigo-300 text-center" />
                     </div>
                   </div>
-                )}
-
-                {/* 選択中の単語数表示 */}
-                <div className="bg-indigo-50 rounded-2xl p-4 text-center border border-indigo-100">
-                  <p className="text-sm text-indigo-500">選択中の範囲</p>
-                  {selectMode === 'page' ? (
-                    <p className="text-2xl font-bold text-indigo-700 mt-1">p.{startPage} 〜 p.{endPage}</p>
-                  ) : (
-                    <p className="text-2xl font-bold text-indigo-700 mt-1">{startWord}番 〜 {endWord}番</p>
-                  )}
-                  <p className="text-lg font-bold text-indigo-600 mt-0.5">{wordCount} 単語</p>
+                  <p className="text-[9px] text-gray-300 text-center uppercase font-bold tracking-tight">Range: {absMin} - {absMax}</p>
                 </div>
+              )}
+            </div>
 
-                {/* アクションボタン */}
-                <div className="space-y-2 pb-6">
-                  <button onClick={() => navigate('list')}
-                    className="w-full py-3.5 bg-white border-2 border-indigo-400 text-indigo-600 rounded-2xl font-bold hover:bg-indigo-50 transition">
-                    📖 一覧で確認する
-                  </button>
-                  <button onClick={() => navigate('study')}
-                    className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-2xl font-bold shadow-md hover:opacity-90 transition">
-                    📚 この範囲を暗記する
-                  </button>
-                  <button onClick={() => navigate('attack')}
-                    className="w-full py-3.5 bg-gradient-to-r from-orange-400 to-red-500 text-white rounded-2xl font-bold shadow-md hover:opacity-90 transition">
-                    ⚡ タイムアタックで挑戦
-                  </button>
-                </div>
-
-              </div>
-            )}
+            {/* モード選択タイル */}
+            <div className="grid grid-cols-2 gap-3">
+              <button onClick={() => navigate('list')} className="aspect-square bg-white border-2 border-gray-100 rounded-3xl shadow-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition group">
+                <span className="text-3xl group-hover:scale-110 transition">📖</span>
+                <span className="font-black text-xs text-gray-700">いちらんで見る</span>
+              </button>
+              <button onClick={() => navigate('study')} className="aspect-square bg-indigo-600 border-2 border-indigo-700 rounded-3xl shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition group text-white">
+                <span className="text-3xl group-hover:scale-110 transition">📚</span>
+                <span className="font-black text-xs">暗記度チェック</span>
+              </button>
+              <button onClick={() => navigate('anagram')} className="aspect-square bg-white border-2 border-orange-200 rounded-3xl shadow-sm flex flex-col items-center justify-center gap-2 active:scale-95 transition group">
+                <span className="text-3xl group-hover:scale-110 transition">🧩</span>
+                <span className="font-black text-xs text-orange-600">ならべかえ</span>
+              </button>
+              <button onClick={() => navigate('attack')} className="aspect-square bg-gradient-to-br from-orange-400 to-red-500 rounded-3xl shadow-lg flex flex-col items-center justify-center gap-2 active:scale-95 transition group text-white">
+                <span className="text-3xl group-hover:scale-110 transition">⚡</span>
+                <span className="font-black text-xs">タイムアタック</span>
+              </button>
+            </div>
           </div>
         )}
       </div>
     </div>
   )
+}
+
+export default function FlashTopPage() {
+  return <Suspense><FlashTopContent /></Suspense>
 }
