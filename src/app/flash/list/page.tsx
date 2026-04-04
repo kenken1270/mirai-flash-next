@@ -42,10 +42,14 @@ function FlashListInner() {
   const [showExample, setShowExample] = useState(false)
   const [diffFilter, setDiffFilter] = useState<number | 'all'>('all')
 
+  // 赤シートモード
+  const [redSheetMode, setRedSheetMode] = useState(false)
+  const [hideTarget, setHideTarget] = useState<'chinese' | 'japanese' | 'pinyin'>('japanese')
+  const [revealedIds, setRevealedIds] = useState<Set<number>>(new Set())
+
   useEffect(() => {
     async function load() {
       setLoading(true)
-      // セット一覧取得
       const { data: setsData } = await supabase
         .from('flashcard_sets')
         .select('id, set_name')
@@ -53,7 +57,6 @@ function FlashListInner() {
         .order('id')
       setSets(setsData ?? [])
 
-      // カード取得（book全体 or 範囲指定）
       const setIds = (setsData ?? []).map((s: SetInfo) => s.id)
       if (setIds.length === 0) { setLoading(false); return }
 
@@ -97,6 +100,67 @@ function FlashListInner() {
     return ['', 'text-green-500', 'text-blue-500', 'text-orange-500', 'text-red-500'][d] ?? ''
   }
 
+  function toggleReveal(id: number) {
+    setRevealedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function revealAll() {
+    setRevealedIds(new Set(filteredCards.map(c => c.id)))
+  }
+  function hideAll() {
+    setRevealedIds(new Set())
+  }
+
+  function renderCell(card: Card, type: 'chinese' | 'japanese' | 'pinyin') {
+    const isHidden = redSheetMode && hideTarget === type && !revealedIds.has(card.id)
+    if (type === 'chinese') {
+      return isHidden ? (
+        <span className="inline-block bg-red-400 text-red-400 rounded px-1 select-none cursor-pointer"
+          onClick={() => toggleReveal(card.id)}>
+          {'■'.repeat(Math.min(card.lang1.length, 6))}
+        </span>
+      ) : (
+        <span className="font-bold text-gray-800 text-xl cursor-pointer"
+          onClick={() => redSheetMode && toggleReveal(card.id)}>
+          {card.lang1}
+        </span>
+      )
+    }
+    if (type === 'pinyin') {
+      return isHidden ? (
+        <span className="inline-block bg-red-400 text-red-400 rounded px-1 select-none cursor-pointer text-sm"
+          onClick={() => toggleReveal(card.id)}>
+          {'■■■■■'}
+        </span>
+      ) : (
+        <span className="text-indigo-500 font-medium text-sm cursor-pointer"
+          onClick={() => redSheetMode && toggleReveal(card.id)}>
+          {card.lang1_sub}
+        </span>
+      )
+    }
+    if (type === 'japanese') {
+      return isHidden ? (
+        <span className="inline-block bg-red-400 text-red-400 rounded px-1 select-none cursor-pointer text-sm"
+          onClick={() => toggleReveal(card.id)}>
+          {'■'.repeat(Math.min((card.lang2 ?? '').length, 8))}
+        </span>
+      ) : (
+        <div className="cursor-pointer" onClick={() => redSheetMode && toggleReveal(card.id)}>
+          <div className="text-gray-700 text-sm">{card.lang2}</div>
+          {showExample && card.lang3 && (
+            <div className="text-gray-400 mt-0.5 text-xs border-t border-gray-100 pt-0.5">{card.lang3}</div>
+          )}
+        </div>
+      )
+    }
+  }
+
   if (loading) return (
     <div className="flex flex-col items-center justify-center min-h-screen gap-3">
       <div className="text-5xl animate-bounce">🐕</div>
@@ -123,7 +187,7 @@ function FlashListInner() {
       <div className="max-w-4xl mx-auto px-4 pt-4 space-y-3">
 
         {/* セット別タブ */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="flex gap-2 overflow-x-auto pb-1">
           <button
             onClick={() => setSelectedSetId('all')}
             className={`flex-shrink-0 px-3 py-1.5 rounded-full text-sm font-bold transition ${
@@ -141,7 +205,7 @@ function FlashListInner() {
                   ? 'bg-amber-400 text-white shadow'
                   : 'bg-white text-gray-500 border border-gray-200'
               }`}>
-              {s.set_name.replace(/^.*?[:：]?\s*/, '').slice(0, 12)} ({setCardCount.get(s.id) ?? 0})
+              {s.set_name.slice(0, 14)} ({setCardCount.get(s.id) ?? 0})
             </button>
           ))}
         </div>
@@ -194,50 +258,106 @@ function FlashListInner() {
           </div>
         </div>
 
+        {/* 赤シートモード */}
+        <div className={`rounded-2xl p-3 shadow-sm border transition ${
+          redSheetMode ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100'
+        }`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">🔴</span>
+              <span className="text-sm font-bold text-gray-700">赤シートモード</span>
+            </div>
+            <button
+              onClick={() => { setRedSheetMode(!redSheetMode); setRevealedIds(new Set()) }}
+              className={`px-4 py-1.5 rounded-full text-sm font-bold transition ${
+                redSheetMode
+                  ? 'bg-red-400 text-white'
+                  : 'bg-gray-100 text-gray-500'
+              }`}>
+              {redSheetMode ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          {redSheetMode && (
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-gray-500">隠す項目：</span>
+                {([
+                  { key: 'japanese', label: '日本語を隠す' },
+                  { key: 'chinese', label: '中国語を隠す' },
+                  { key: 'pinyin', label: 'ピンインを隠す' },
+                ] as const).map(({ key, label }) => (
+                  <button key={key}
+                    onClick={() => { setHideTarget(key); setRevealedIds(new Set()) }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold transition ${
+                      hideTarget === key
+                        ? 'bg-red-400 text-white shadow'
+                        : 'bg-white text-gray-500 border border-gray-200'
+                    }`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <button onClick={revealAll}
+                  className="flex-1 py-1.5 bg-white border border-red-200 text-red-400 rounded-xl text-xs font-bold hover:bg-red-50 transition">
+                  全部見る
+                </button>
+                <button onClick={hideAll}
+                  className="flex-1 py-1.5 bg-red-400 text-white rounded-xl text-xs font-bold hover:bg-red-500 transition">
+                  全部隠す
+                </button>
+              </div>
+              <p className="text-xs text-red-400 text-center">🔴 隠れている部分をタップすると答えが見えます</p>
+            </div>
+          )}
+        </div>
+
         {/* 件数表示 */}
         <p className="text-xs text-gray-400 text-right">{filteredCards.length} 件表示中</p>
 
         {/* 単語テーブル */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full">
               <thead>
                 <tr className="bg-amber-50 border-b border-amber-100">
-                  <th className="px-3 py-2 text-left text-xs font-bold text-amber-700 w-12">No.</th>
-                  {showChinese && <th className="px-3 py-2 text-left text-xs font-bold text-amber-700">中国語</th>}
-                  {showPinyin && <th className="px-3 py-2 text-left text-xs font-bold text-amber-700">ピンイン</th>}
-                  {showJapanese && <th className="px-3 py-2 text-left text-xs font-bold text-amber-700">日本語</th>}
-                  <th className="px-3 py-2 text-center text-xs font-bold text-amber-700 w-16">難易度</th>
+                  <th className="px-3 py-2.5 text-left text-xs font-bold text-amber-700 w-12">No.</th>
+                  {showChinese && <th className="px-3 py-2.5 text-left text-xs font-bold text-amber-700">中国語</th>}
+                  {showPinyin && <th className="px-3 py-2.5 text-left text-xs font-bold text-amber-700">ピンイン</th>}
+                  {showJapanese && <th className="px-3 py-2.5 text-left text-xs font-bold text-amber-700">日本語</th>}
+                  <th className="px-3 py-2.5 text-center text-xs font-bold text-amber-700 w-16">難易度</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredCards.map((card, i) => (
                   <tr key={card.id}
-                    className={`border-b border-gray-50 hover:bg-amber-50 transition ${
-                      i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                    }`}>
-                    <td className="px-3 py-2.5 text-xs text-gray-400 font-mono">{card.item_no}</td>
+                    className={`border-b border-gray-50 transition ${
+                      redSheetMode && !revealedIds.has(card.id)
+                        ? 'hover:bg-red-50'
+                        : 'hover:bg-amber-50'
+                    } ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}`}>
+                    <td className="px-3 py-3 text-sm text-gray-400 font-mono">{card.item_no}</td>
                     {showChinese && (
-                      <td className="px-3 py-2.5">
-                        <span className="font-bold text-gray-800 text-base">{card.lang1}</span>
-                        {card.lang2_sub && (
+                      <td className="px-3 py-3">
+                        {renderCell(card, 'chinese')}
+                        {!redSheetMode && card.lang2_sub && (
                           <span className="ml-1 text-xs text-red-400">（{card.lang2_sub}）</span>
                         )}
                       </td>
                     )}
                     {showPinyin && (
-                      <td className="px-3 py-2.5 text-xs text-indigo-500 font-medium">{card.lang1_sub}</td>
-                    )}
-                    {showJapanese && (
-                      <td className="px-3 py-2.5 text-xs text-gray-600">
-                        <div>{card.lang2}</div>
-                        {showExample && card.lang3 && (
-                          <div className="text-gray-400 mt-0.5 text-xs border-t border-gray-100 pt-0.5">{card.lang3}</div>
-                        )}
+                      <td className="px-3 py-3">
+                        {renderCell(card, 'pinyin')}
                       </td>
                     )}
-                    <td className="px-3 py-2.5 text-center">
-                      <span className={`text-xs ${diffColor(card.difficulty)}`}>
+                    {showJapanese && (
+                      <td className="px-3 py-3">
+                        {renderCell(card, 'japanese')}
+                      </td>
+                    )}
+                    <td className="px-3 py-3 text-center">
+                      <span className={`text-sm ${diffColor(card.difficulty)}`}>
                         {diffLabel(card.difficulty)}
                       </span>
                     </td>
