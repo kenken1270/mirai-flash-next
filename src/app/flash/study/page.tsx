@@ -17,6 +17,7 @@ type Card = {
   lang2: string
   lang2_sub: string
   lang3: string
+  lang3_sub: string
   set_id: number
 }
 
@@ -78,7 +79,7 @@ function StudyContent() {
       setUsername(uname)
 
       let query = supabase.from('flashcards_v3')
-        .select('id,item_no,lang1,lang1_sub,lang2,lang2_sub,lang3,set_id')
+        .select('id,item_no,lang1,lang1_sub,lang2,lang2_sub,lang3,lang3_sub,set_id')
         .order('item_no')
 
       if (bookId) {
@@ -389,7 +390,6 @@ function StudyContent() {
                 <p className="text-xs text-gray-400 mb-1">🇯🇵 日本語</p>
                 <p className="text-2xl font-bold text-gray-800">{card.lang2}</p>
               </div>
-
               {/* lang2_sub：中国語教材→中国語表示、英語/日本語教材→よみかた表示 */}
               {card.lang2_sub && (
                 ttsLang1 === 'zh-CN'
@@ -401,6 +401,14 @@ function StudyContent() {
                       <p className="text-xs text-gray-400 mb-0.5">🔤 よみかた</p>
                       <p className="text-base text-yellow-700 font-mono tracking-wide">{card.lang2_sub}</p>
                     </div>
+              )}
+
+              {/* 中国語訳: lang3_subに入っている（英検4級・3級共通） */}
+              {card.lang3_sub && ttsLang1 !== 'zh-CN' && (
+                <div className="w-full bg-red-50 rounded-2xl px-5 py-2 border border-red-100 text-center">
+                  <p className="text-xs text-gray-400 mb-0.5">🇨🇳 中国語</p>
+                  <p className="text-xl font-bold text-red-700">{card.lang3_sub}</p>
+                </div>
               )}
 
               {/* 例文 */}
