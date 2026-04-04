@@ -1,166 +1,87 @@
-# 未来塾アプリ DB設計書
+プロジェクト概要:
 
-最終更新：2026-04-02
+アプリ名は「未来塾（Mirai Juku）」で、外国籍の子ども向け学習管理アプリです。日本語・中国語を学ぶ小学生を対象とし、妻が教室経営・ありむらさんがアプリ運営を担います。
 
-## テーブル一覧
+技術スタック:
 
-| テーブル名 | 用途 | 件数 |
-|---|---|---|
-| users | 生徒情報・EXP管理 | 複数 |
-| plans | 学習計画タスク | 複数 |
-| news | お知らせ | 複数 |
-| events | カレンダーイベント | 複数 |
-| help_requests | 質問箱 | 複数 |
-| flashcard_books | 教材本マスタ | 3件 |
-| flashcard_sets | 単語セット | 3件 |
-| flashcards_v3 | 単語カード | 300件 |
-| review_logs | SRS学習履歴 | 複数 |
-| quiz_results | クイズ結果 | 複数 |
-| ta_scores | タイムアタック結果 | 複数 |
-| materials | 教材マスタ（plans連携） | 複数 |
-| master_events | 全員共通イベント | 複数 |
-| parents | 保護者情報 | 複数 |
-| content | コンテンツ管理 | 複数 |
+フロントエンド：Next.js 15 / TypeScript / Tailwind CSS
+バックエンド：Supabase（PostgreSQL）
+デプロイ：Vercel
+リポジトリ：https://github.com/kenken1270/mirai-flash-next
+ブランドデザイン:
 
-※削除済み：flashcards（旧テーブル・2026-04-02）
+メインカラー：クリーム背景 #FFFDF0
+ブランドイエロー：#FCD34D（ヘッダーのみ）
+テキスト：ダークブラウン #1C1410
+マスコット：柴犬
+コンセプト：ゲーミフィケーション（EXP・レベル・ストリーク）
+DB構造（2026/04/04時点・確定済み）:
 
----
+users テーブルは username, nickname, current_points, streak, exp を持ちます。plans テーブルは username, big_plan, mid_plan, task_name, task_date, is_done を持ちます。
 
-## 主要テーブル詳細
+flashcard_books は教材本マスタで、2026/04/04時点で4件が登録済みです。
 
-### users
-| カラム | 型 | 説明 |
-|---|---|---|
-| id | INT PK | 自動採番 |
-| username | TEXT | ログインID（メールの@前） |
-| nickname | TEXT | 表示名 |
-| current_points | INT | EXPポイント |
-| exp | INT | 累計EXP |
-| streak | INT | 連続学習日数 |
-| lang | TEXT | 言語設定（ja/zh） |
-| grade_num | INT | 学年 |
-| grade_num | INT | 学年 |
-| last_login_date | TEXT | 最終ログイン日 |
-| daily_new_limit | INT | 1日の新規カード上限 |
-| pin | TEXT | PINコード |
+id	title	lang1_label	lang2_label
+1	英検3級 でる順パス単	英語	日本語
+2	みんなの日本語 初級1	日本語	日本語
+3	でる順パス単 英検4級	英語	日本語
+4	新 HSK1〜4級 単語トレーニングブック	中国語	日本語
+flashcard_sets は各教材のユニット／セットを管理します。2026/04/04時点で7件が登録済みです。
 
-### plans
-| カラム | 型 | 説明 |
-|---|---|---|
-| id | INT PK | 自動採番 |
-| username | TEXT | ユーザー名 |
-| big_plan | TEXT | 大計画（ゴール） |
-| mid_plan | TEXT | 中計画（月テーマ） |
-| task_name | TEXT | タスク名 |
-| task_date | TEXT | 実施日（YYYY-MM-DD） |
-| is_done | INT | 完了フラグ（0/1） |
-| task_type | TEXT | タスク種別 |
-| planned_minutes | INT | 予定時間（分） |
-| actual_minutes | INT | 実績時間（分） |
-| material_id | TEXT | 教材ID（TEXT型） |
-| page_range | TEXT | ページ範囲 |
-| deadline | TEXT | 締め切り |
-| see_score | INT | 振り返りスコア |
-| see_comment | TEXT | 振り返りコメント |
-| teacher_stamp | BOOL | 先生スタンプ |
-| stamp_code | TEXT | スタンプコード |
+set_id	book_id	set_name	単語数
+1	3	でる順パス単 英検4級 5訂版	135
+2	2	みんなの日本語 初級1	65
+3	1	英検3級 でる順パス単	100
+16	4	UNIT 1: 人に関する言葉	546
+17	4	UNIT 2: さまざまな物と事象の表現	302
+18	4	UNIT 3: 周辺環境・社会に関する言葉	313
+19	4	UNIT 4: 全分野に関わる表現	97
+flashcards_v3 は単語カード本体で、2026/04/04時点で1,558件・全件中国語訳済みです。フィールド構成は id, set_id, item_no, lang1（単語本体）, lang1_sub（ピンイン/発音記号）, lang2（日本語訳）, lang2_sub（中国語補足訳）, lang3（例文）, difficulty（1〜4）, created_by です。
 
-### flashcard_books（教材本マスタ）
-| カラム | 型 | 説明 |
-|---|---|---|
-| id | INT PK | 自動採番 |
-| title | TEXT | 教材名 |
-| subtitle | TEXT | サブタイトル |
-| publisher | TEXT | 出版社 |
-| category | TEXT | english/japanese/chinese等 |
-| grade | TEXT | 学年・レベル |
-| cover_emoji | TEXT | 表紙絵文字 |
-| description | TEXT | 説明 |
+review_logs はSRS学習履歴、events はカレンダーイベント、help_requests は質問箱です。
 
-**登録済み教材：**
-| id | title | category |
-|---|---|---|
-| 1 | でる順パス単 英検4級 5訂版 | english |
-| 2 | みんなの日本語 初級1 | japanese |
-| 3 | でる順パス単 英検3級 | english |
+ページ構成（2026/04/04時点）:
 
-### flashcard_sets（単語セット）
-| カラム | 型 | 説明 |
-|---|---|---|
-| id | INT PK | 自動採番 |
-| book_id | INT FK | flashcard_books.id |
-| set_name | TEXT | セット名 |
-| category | TEXT | english/japanese等 |
-| card_type | TEXT | word/phrase/conversation等 |
-| subject_type | TEXT | word/phrase/conversation |
-| subject | TEXT | english/japanese等 |
-| lang1_label | TEXT | 表面ラベル |
-| lang2_label | TEXT | 裏面ラベル |
-| lang3_label | TEXT | 補足ラベル |
-| lang1_tts_lang | TEXT | 表面読み上げ言語 |
-| lang2_tts_lang | TEXT | 裏面読み上げ言語 |
-| question_lang | TEXT | lang1固定 |
-| answer_lang | TEXT | lang2固定 |
+/student：ホーム（HUD・柴犬・EXP表示）
+/student/today：今日のタスク
+/student/plan：学習プラン（大/中/小・リスト/週間/月間タブ）
+/student/tango：単語アプリ（/flashへリダイレクト）
+/student/calendar：カレンダー
+/student/test：テスト
+/student/help：質問箱
+/flash：フラッシュカードアプリ本体（教材選択・範囲選択）
+/flash/list：単語一覧ページ（赤シートモード付き）
+/flash/study：学習モード
+/flash/attack：アタックモード
+/flash/list ページ仕様（2026/04/04 実装済み）:
 
-**登録済みセット：**
-| id | set_name | book_id | category | card_type |
-|---|---|---|---|---|
-| 1 | でる順パス単 英検4級 5訂版 | 3 | english | word |
-| 2 | みんなの日本語 初級1 | 2 | japanese | word |
-| 3 | 英検3級 でる順パス単 | 1 | english | word |
+単語一覧ページの主要機能は以下の通りです。教材ごとに flashcard_books.lang1_label / lang2_label を参照してテーブルヘッダーを動的切替します（英語教材では「英語」列、中国語教材では「中国語」列と表示）。中国語教材（HSK）のみ「中国語訳」列（lang2_sub）を追加表示します。例文（lang3）列も常時表示します。
 
-**カテゴリ定義：**
-| 値 | 説明 |
-|---|---|
-| english | 英語・英検 |
-| japanese | 日本語（外国人向け） |
-| chinese | 中国語 |
-| science | 理科 |
-| japanese_lang | 国語・文法 |
-| math | 算数・数学 |
-| social | 社会・歴史地理 |
-| other | その他 |
+難易度別の行カラーは以下の通りです。difficulty=1 は bg-green-50（HSK1相当・易しい）、difficulty=2 は bg-yellow-50（HSK2相当・初級）、difficulty=3 は bg-orange-50（HSK3相当・中級）、difficulty=4 は bg-red-50（HSK4相当・上級）です。
 
-**card_type定義：**
-| 値 | 説明 |
-|---|---|
-| word | 単語暗記 |
-| phrase | 熟語・フレーズ |
-| conversation | 会話表現 |
-| definition | 用語説明（理科・国語） |
-| qa | 一問一答（歴史・地理） |
-| sentence | 例文練習 |
+赤シートモードの仕様は以下の通りです。赤いブロック（bg-red-500塗りつぶし）でセルを隠します。チェックボックスで隠す列を複数選択できます（lang1・lang1_sub・lang2・lang2_sub・lang3）。セルを個別タップすることで1つずつめくれます。「全て表示」「全て隠す」ボタンで一括操作できます。チェックボックスのラベルは教材の言語に応じて動的変化します（例：英語教材では「英語」、中国語教材では「中国語」）。
 
-### flashcards_v3（単語カード・メインテーブル）
-| カラム | 型 | 説明 |
-|---|---|---|
-| id | INT PK | 自動採番 |
-| set_id | INT FK | flashcard_sets.id |
-| item_no | INT | セット内順番 |
-| page_no | INT | ページ番号 |
-| page_range | TEXT | ページ範囲 |
-| lang1 | TEXT | 表面（単語・問い） |
-| lang1_sub | TEXT | 読み仮名・発音 |
-| lang2 | TEXT | 裏面（意味・答え） |
-| lang2_sub | TEXT | 中国語訳・補足説明 |
-| lang3 | TEXT | 例文・解説 |
-| lang3_sub | TEXT | 例文訳 |
-| hint | TEXT | ヒント |
-| image_url | TEXT | 画像URL（将来実装予定） |
-| difficulty | INT | 難易度1〜5 |
-| created_by | TEXT | 作成者 |
-| created_at | TIMESTAMP | 作成日時 |
-| updated_at | TIMESTAMP | 更新日時 |
+難易度基準（flashcards_v3.difficulty）:
 
-**データ状況（2026-04-02時点）：**
-- 総件数：300件
-- 英語カード：235件（全件中国語訳済み）
-- 日本語カード：65件（うち11件に日本語補足説明追加済み）
+difficulty=1 はHSK1相当（最頻出・基礎）、difficulty=2 はHSK2相当（初級）、difficulty=3 はHSK3相当（中級）、difficulty=4 はHSK4相当（上級）です。英検教材では difficulty=1〜3 を目安に設定しています。
 
-**※削除済みカラム（2026-04-02）：**
-tts_lang1、tts_lang2、tts_lang3、tags
+現在の課題・作業中（2026/04/04）:
 
----
+完了済みの内容は以下の通りです。DB重複排除（set_id=16,19の重複削除）、全1,558件の単語登録（英検4級135件、みんなの日本語65件、英検3級100件、新HSK UNIT1〜4 計1,258件）、全件中国語訳完了、flashcard_books に lang1_label / lang2_label 列追加、/flash/list ページの赤シートモード実装、教材ごとの動的ヘッダー切替実装です。
 
-## テーブル関係図
+進行中の内容は /flash/list の最新コードのビルド・デプロイ確認（現在更新中）です。
 
+次のタスク候補は以下の通りです。🔴 高優先：ユニットをまたいだ複数セット選択テスト機能（book_id 単位での全件テスト）、🔴 高優先：/student/plan のリスト/週間/月間タブ完成確認、🟡 中優先：/flash/study での学習進捗記録（review_logs への書き込み）、🟢 低優先：画像（image_url）機能追加です。
+
+ユニットをまたいだテストの設計方針（確定）:
+
+新しいテーブルは作らず、flashcard_books.id（book_id）を使って flashcard_sets 経由で全セットのカードを一括取得するアプローチC（Book-wide query）を採用します。
+
+Copy-- book_id=4（新HSK）の全単語をランダム20件取得
+SELECT v.* 
+FROM flashcards_v3 v
+JOIN flashcard_sets s ON s.id = v.set_id
+WHERE s.book_id = 4
+ORDER BY RANDOM() 
+LIMIT 20;
+UIでは /flash ページの教材選択後に「全セットまとめて学習」ボタンを設置し、bookId パラメータで /flash/list や /flash/study に遷移する設計です。
