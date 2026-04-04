@@ -434,7 +434,7 @@ function StudyContent() {
       </div>
 
       {/* ボタンエリア */}
-      <div className="px-4 pb-8 max-w-lg mx-auto w-full space-y-3">
+      <div className="px-4 pb-2 max-w-lg mx-auto w-full space-y-3">
         {!showAnswer ? (
           <button onClick={() => { setShowAnswer(true); speak(card.lang2, ttsLang2) }}
             className="w-full py-4 bg-yellow-400 text-gray-900 rounded-2xl font-bold text-xl shadow-lg hover:bg-yellow-500 transition">
