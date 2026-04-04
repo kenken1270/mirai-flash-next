@@ -17,6 +17,7 @@ type Card = {
   lang2: string
   lang2_sub: string
   lang3: string
+  lang3_sub: string
   difficulty: number
 }
 
@@ -114,7 +115,7 @@ function FlashListContent() {
       // カード取得
       let query = supabase
         .from('flashcards_v3')
-        .select('id, item_no, lang1, lang1_sub, lang2, lang2_sub, lang3, difficulty')
+        .select('id, item_no, lang1, lang1_sub, lang2, lang2_sub, lang3, lang3_sub, difficulty')
         .gte('item_no', start)
         .lte('item_no', end)
         .order('item_no')
@@ -181,8 +182,11 @@ function FlashListContent() {
     : bookInfo.lang1_label === '英語' ? '発音記号'
     : 'よみ'
 
-  // 中国語訳列は中国語教材のみ表示
-  const showLang2Sub = bookInfo.lang1_label === '中国語'
+  // 中国語訳列：中国語教材はlang2_sub、英語教材はlang3_sub
+  const isChinese = bookInfo.lang1_label === '中国語'
+  const isEnglish = bookInfo.lang1_label === '英語' || bookInfo.lang1_label === '英単語' || bookInfo.lang1_label === '英検'
+  const showLang2Sub = isChinese
+  const showLang3Sub = isEnglish
 
   // チェックボックスの選択肢（教材に応じて動的）
   const hideOptions = [
@@ -190,6 +194,7 @@ function FlashListContent() {
     { key: 'lang1_sub', label: pinyin_label },
     { key: 'lang2',     label: bookInfo.lang2_label },
     ...(showLang2Sub ? [{ key: 'lang2_sub', label: '中国語訳' }] : []),
+    ...(showLang3Sub ? [{ key: 'lang3_sub', label: '中国語訳' }] : []),
     { key: 'lang3',     label: '例文' },
   ]
 
@@ -307,6 +312,9 @@ function FlashListContent() {
                 {showLang2Sub && (
                   <th className="px-3 py-2 text-left text-red-600">中国語訳</th>
                 )}
+                {showLang3Sub && (
+                  <th className="px-3 py-2 text-left text-red-600">中国語訳</th>
+                )}
                 <th className="px-3 py-2 text-left text-blue-600">例文</th>
               </tr>
             </thead>
@@ -351,6 +359,17 @@ function FlashListContent() {
                           text={card.lang2_sub}
                           hidden={isCellHidden(card.id, 'lang2_sub')}
                           onReveal={() => revealCell(card.id, 'lang2_sub')}
+                        />
+                      </td>
+                    )}
+
+                    {/* 中国語訳（英語教材のみ・lang3_sub） */}
+                    {showLang3Sub && (
+                      <td className="px-3 py-3 text-base text-red-700 font-semibold">
+                        <RedBlock
+                          text={card.lang3_sub ?? ''}
+                          hidden={isCellHidden(card.id, 'lang3_sub')}
+                          onReveal={() => revealCell(card.id, 'lang3_sub')}
                         />
                       </td>
                     )}
