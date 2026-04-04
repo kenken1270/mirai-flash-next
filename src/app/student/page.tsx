@@ -1,182 +1,111 @@
-'use client'
+﻿'use client'
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { loadUser, loadPlans } from '@/lib/student'
-import type { UserRow, PlanRow } from '@/lib/student'
+import { loadUser, loadPlans, updatePlan, todayStr, type UserRow, type PlanRow } from '@/lib/student'
 
-const MENU_ITEMS = [
-  { id: 'today',    label: '今日',       emoji: '📚', href: '/student/today'    },
-  { id: 'plan',     label: '計画',       emoji: '🗺️',  href: '/student/plan'     },
-  { id: 'calendar', label: 'カレンダー', emoji: '📅', href: '/student/calendar' },
-  { id: 'test',     label: 'テスト',     emoji: '✏️',  href: '/student/test'     },
-  { id: 'gacha',    label: 'ガチャ',     emoji: '🎰', href: '/student/gacha'    },
-  { id: 'tango',    label: 'たんご',     emoji: '🃏', href: '/student/tango'    },
-  { id: 'help',     label: '先生に聞く', emoji: '🐕', href: '/student/help'     },
-  { id: 'break',    label: 'ひと休み',   emoji: '☕', href: '/student/break'    },
-]
-
-function xpToLevel(xp: number) {
-  const level = Math.floor(xp / 100) + 1
-  const current = xp % 100
-  return { level, current, needed: 100 }
-}
-
-function getMascot(tasks: PlanRow[], done: number) {
-  if (tasks.length === 0) return 'きょうはおやすみ？のんびりしよ〜'
-  if (done === tasks.length) return 'ぜんぶできた！！すごすぎる！！🎉'
-  if (done === 0) return 'さあはじめよう！いっしょにがんばる！'
-  return `もう${done}こできた！あとちょっと！`
-}
-
-export default function StudentHome() {
+export default function StudentHomePage() {
   const router = useRouter()
   const [user, setUser] = useState<UserRow | null>(null)
-  const [tasks, setTasks] = useState<PlanRow[]>([])
-  const [doneTasks, setDoneTasks] = useState(0)
-  const [news, setNews] = useState<string>('')
+  const [plans, setPlans] = useState<PlanRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [username, setUsername] = useState('')
 
   useEffect(() => {
-    const init = async () => {
+    async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
       const uname = session.user.email?.split('@')[0] ?? ''
-      setUsername(uname)
-      console.log('DEBUG username:', uname, 'email:', session.user.email)
-      const u = await loadUser(uname)
-      if (u) setUser(u)
-      const allPlans = await loadPlans(uname)
-      if (allPlans) {
-        const today = new Date().toISOString().slice(0, 10)
-        const todayTasks = allPlans.filter((p: PlanRow) =>
-          p.task_date === today
-        )
-        setTasks(todayTasks)
-        setDoneTasks(todayTasks.filter((p: PlanRow) => p.is_done === 1).length)
-      }
-      const { data: nd } = await supabase.from('news').select('message').order('created_date', { ascending: false }).limit(1).single()
-      if (nd) setNews(nd.message)
-      setLoading(false)
+      const [u, p] = await Promise.all([loadUser(uname), loadPlans(uname)])
+      setUser(u); setPlans(p); setLoading(false)
     }
     init()
   }, [router])
 
-  if (loading) return (
-    <div className="min-h-screen flex items-center justify-center" style={{ background: '#FFFDF0' }}>
-      <div className="text-center">
-        <div className="text-7xl mb-4 animate-bounce">🐕</div>
-        <p className="font-black text-xl" style={{ color: '#78350F' }}>よみこみちゅう…</p>
-      </div>
-    </div>
-  )
+  const todayTasks = plans.filter(p => p.task_date === todayStr())
+  const doneCount = todayTasks.filter(t => t.is_done === 1).length
+  const progress = todayTasks.length > 0 ? Math.round((doneCount / todayTasks.length) * 100) : 0
 
-  const { level, current, needed } = xpToLevel(user?.current_points ?? 0)
-  const msg = getMascot(tasks, doneTasks)
-  const progressPct = tasks.length > 0 ? Math.round((doneTasks / tasks.length) * 100) : 0
+  async function toggleDone(e: React.MouseEvent, task: PlanRow) {
+    e.stopPropagation() // 親要素のクリックイベント（ページ遷移）を防ぐ
+    const nd = task.is_done === 1 ? 0 : 1
+    await updatePlan(task.id, { is_done: nd })
+    setPlans(await loadPlans(user?.username || ''))
+  }
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFDF0] animate-pulse text-yellow-600 font-bold">🐕 作戦会議中...</div>
 
   return (
-    <div className="min-h-screen pb-24" style={{ background: '#FFFDF0' }}>
-
-      {/* ===== HUDヘッダー：黄色帯は上部のみ ===== */}
-      <div className="px-4 pt-10 pb-5" style={{ background: 'linear-gradient(180deg, #FCD34D 0%, #FDE68A 100%)' }}>
-        <div className="flex items-start justify-between gap-3 max-w-lg mx-auto">
-
-          {/* 左：柴犬アバター */}
-          <div className="flex flex-col items-center gap-1 flex-shrink-0">
-            <div className="w-18 h-18 rounded-full bg-white flex items-center justify-center text-5xl border-4 shadow-lg"
-              style={{ borderColor: '#F59E0B', width: '72px', height: '72px' }}>
-              🐕
-            </div>
-            <div className="text-white text-xs font-black px-3 py-0.5 rounded-full shadow"
-              style={{ background: '#92400E' }}>
-              Lv.{level}
-            </div>
-          </div>
-
-          {/* 中央：名前・メッセージ・XPゲージ */}
-          <div className="flex-1 min-w-0">
-            <p className="font-black text-lg leading-tight" style={{ color: '#1C1410' }}>
-              {user?.nickname || user?.username || username || 'まなびびと'}さん
-            </p>
-            <p className="text-sm mb-2" style={{ color: '#78350F' }}>{msg}</p>
-            <div className="rounded-full h-4 w-full overflow-hidden border" style={{ background: '#FEF3C7', borderColor: '#F59E0B' }}>
-              <div
-                className="h-full rounded-full transition-all duration-700"
-                style={{
-                  width: `${(current / needed) * 100}%`,
-                  background: 'linear-gradient(90deg, #B45309, #92400E)'
-                }}
-              />
-            </div>
-            <div className="flex justify-between mt-0.5">
-              <span className="text-xs font-bold" style={{ color: '#1C1410' }}>XP {user?.current_points ?? 0}</span>
-              <span className="text-xs" style={{ color: '#78350F' }}>あと{needed - current}でLv.{level + 1}</span>
-            </div>
-          </div>
-
-          {/* 右：ストリーク */}
-          <div className="flex flex-col items-center bg-white rounded-2xl px-3 py-2 shadow border flex-shrink-0"
-            style={{ borderColor: '#FCD34D' }}>
-            <span className="text-2xl">🔥</span>
-            <span className="font-black text-lg leading-none" style={{ color: '#1C1410' }}>{user?.streak ?? 0}</span>
-            <span className="text-xs" style={{ color: '#78350F' }}>日連続</span>
+    <div className="flex-1 flex flex-col space-y-6 p-4 bg-[#FFFDF0]">
+      {/* ユーザープロフィール（色味を柔らかく調整） */}
+      <div className="bg-white p-5 rounded-3xl shadow-sm border-2 border-yellow-100 flex items-center gap-4">
+        <div className="w-14 h-14 bg-yellow-100 rounded-full flex items-center justify-center text-3xl shadow-inner">🐶</div>
+        <div className="flex-1">
+          <h2 className="font-black text-base text-gray-700">{user?.nickname || user?.username} さん</h2>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Level {user?.grade_num || 1} · {user?.current_points || 0} EXP</p>
+          <div className="h-1.5 w-full bg-gray-50 rounded-full mt-2 overflow-hidden border border-gray-100">
+            <div className="h-full bg-yellow-400" style={{ width: '40%' }}></div>
           </div>
         </div>
       </div>
 
-      {/* ===== 以下は背景クリーム ===== */}
-      <div className="max-w-lg mx-auto px-4 mt-4 space-y-3">
-
-        {/* 今日の進捗カード */}
-        <div className="bg-white rounded-2xl p-4 shadow-sm border" style={{ borderColor: '#FDE68A' }}>
-          <div className="flex items-center justify-between mb-2">
-            <span className="font-black text-base" style={{ color: '#1C1410' }}>📋 今日のタスク</span>
-            <span className="font-bold text-sm" style={{ color: '#78350F' }}>{doneTasks}/{tasks.length}こ</span>
-          </div>
-          <div className="rounded-full h-5 overflow-hidden" style={{ background: '#FEF9C3', border: '1px solid #FDE68A' }}>
-            <div
-              className="h-full rounded-full transition-all duration-700"
-              style={{
-                width: `${progressPct}%`,
-                background: 'linear-gradient(90deg, #FCD34D, #F59E0B)',
-                minWidth: progressPct > 0 ? '1.5rem' : '0'
-              }}
-            />
-          </div>
-          <button
-            onClick={() => router.push('/student/today')}
-            className="mt-3 w-full py-3 rounded-xl font-black text-base shadow-sm transition-all active:scale-95"
-            style={{ background: '#FCD34D', color: '#1C1410', border: '2px solid #F59E0B' }}
-          >
-            {doneTasks === tasks.length && tasks.length > 0 ? '✅ ぜんぶおわった！' : '▶ つづきをやる'}
-          </button>
+      {/* 今日のミッション（クリックで学習ページへ） */}
+      <div className="space-y-3">
+        <div className="flex justify-between items-end px-1">
+          <h3 className="font-black text-gray-400 text-[10px] uppercase tracking-[0.2em]">Today's Missions</h3>
+          <span className="text-[10px] font-black text-indigo-400">{doneCount} / {todayTasks.length} Done</span>
         </div>
-
-        {/* メニューグリッド */}
-        <div className="grid grid-cols-4 gap-2">
-          {MENU_ITEMS.map(item => (
-            <button
-              key={item.id}
-              onClick={() => router.push(item.href)}
-              className="bg-white rounded-2xl py-3 flex flex-col items-center gap-1 shadow-sm transition-all active:scale-95"
-              style={{ border: '2px solid #FDE68A', borderBottom: '4px solid #F59E0B' }}
-            >
-              <span className="text-3xl">{item.emoji}</span>
-              <span className="font-black text-xs" style={{ color: '#78350F' }}>{item.label}</span>
-            </button>
-          ))}
+        
+        <div className="bg-white p-5 rounded-[2.5rem] shadow-md border-2 border-yellow-200">
+          {todayTasks.length === 0 ? (
+            <div className="py-6 text-center space-y-4">
+              <p className="text-gray-300 font-bold italic text-sm">今日はまだクエストがないよ</p>
+              <button onClick={() => router.push('/student/plan')} className="bg-yellow-400 text-gray-800 px-8 py-3 rounded-2xl font-black text-sm shadow-md active:scale-95 transition">🗓️ 計画をたてる</button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-3 bg-gray-50 rounded-full overflow-hidden border border-gray-100">
+                  <div className="h-full bg-gradient-to-r from-green-400 to-emerald-500 transition-all duration-1000" style={{ width: `${progress}%` }}></div>
+                </div>
+                <span className="font-black text-green-500 text-sm">{progress}%</span>
+              </div>
+              
+              <div className="space-y-2 pt-2">
+                {todayTasks.map(t => (
+                  <div 
+                    key={t.id} 
+                    onClick={() => router.push(`/student/study?taskId=${t.id}`)}
+                    className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all active:scale-[0.98] cursor-pointer ${t.is_done ? 'bg-gray-50 border-gray-100' : 'bg-white border-yellow-50 hover:border-yellow-200 shadow-sm'}`}
+                  >
+                    <button 
+                      onClick={(e) => toggleDone(e, t)} 
+                      className={`w-10 h-10 rounded-full border-2 flex items-center justify-center transition-all ${t.is_done === 1 ? 'bg-green-500 border-green-500 shadow-inner' : 'bg-white border-gray-200'}`}
+                    >
+                      {t.is_done === 1 && <span className="text-white font-black text-sm">✓</span>}
+                    </button>
+                    <div className="flex-1">
+                      <p className={`font-bold text-sm ${t.is_done ? 'text-gray-300 line-through' : 'text-gray-700'}`}>{t.task_name}</p>
+                      <p className="text-[10px] text-indigo-300 font-bold mt-0.5 uppercase tracking-tighter">▶︎ タップして学習を開始</p>
+                    </div>
+                    <span className="text-gray-200 text-xl">›</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </div>
 
-        {/* お知らせ */}
-        {news && (
-          <div className="bg-white rounded-2xl px-4 py-3 shadow-sm border" style={{ borderColor: '#FDE68A' }}>
-            <p className="text-xs font-bold mb-0.5" style={{ color: '#F59E0B' }}>📢 お知らせ</p>
-            <p className="text-sm" style={{ color: '#1C1410' }}>{news}</p>
-          </div>
-        )}
-
+      {/* サブアクション（色味を柔らかく） */}
+      <div className="grid grid-cols-2 gap-4">
+        <button onClick={() => router.push('/flash')} className="bg-white border-2 border-indigo-50 p-5 rounded-[2rem] shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
+          <span className="text-3xl">🃏</span>
+          <span className="font-black text-[10px] text-indigo-400 uppercase tracking-widest">Training</span>
+        </button>
+        <button onClick={() => router.push('/student/test')} className="bg-white border-2 border-orange-50 p-5 rounded-[2rem] shadow-sm flex flex-col items-center gap-2 active:scale-95 transition">
+          <span className="text-3xl">📝</span>
+          <span className="font-black text-[10px] text-orange-400 uppercase tracking-widest">Test</span>
+        </button>
       </div>
     </div>
   )
