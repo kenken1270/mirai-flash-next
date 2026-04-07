@@ -86,6 +86,13 @@ function horizonToApproxMonths(unit: BigPlanHorizonUnit, value: number): number 
 
 type TabId = 'big' | 'month' | 'daily'
 
+/** 量の目安：種類ボタン用の短いラベル */
+const PACING_TEMPLATE_CHIP: Record<string, string> = {
+  vocab_all: '単語・全冊',
+  vocab_book: '単語・1冊',
+  textbook_pages: '教材ページ',
+}
+
 function PlanContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -127,8 +134,7 @@ function PlanContent() {
   const [weeksInput, setWeeksInput] = useState('5')
   const [bigHorizonUnit, setBigHorizonUnit] = useState<BigPlanHorizonUnit>('months')
   const [bigHorizonValue, setBigHorizonValue] = useState('6')
-  const [bigFocusKind, setBigFocusKind] = useState<'material' | 'free'>('free')
-  /** 大目標「アプリの教材名」— 複数選択可 */
+  /** 大目標：アプリ登録教材（複数）＋自由文（同時可） */
   const [bigFocusMaterials, setBigFocusMaterials] = useState<string[]>([])
   const [bigFocusFree, setBigFocusFree] = useState('')
   const [countLines, setCountLines] = useState<CountLine[]>([])
@@ -262,7 +268,6 @@ function PlanContent() {
         setBigHorizonUnit(saved.bigPlanHorizon.unit)
         setBigHorizonValue(String(Math.max(1, saved.bigPlanHorizon.value)))
       }
-      if (saved.bigPlanFocusKind) setBigFocusKind(saved.bigPlanFocusKind)
       if (saved.bigPlanFocusMaterials?.length) {
         setBigFocusMaterials(saved.bigPlanFocusMaterials)
       } else if (saved.bigPlanFocusMaterial?.trim()) {
@@ -545,10 +550,8 @@ function PlanContent() {
       studyDaysPerWeek: pacingWeeks,
       updatedAt: new Date().toISOString(),
       bigPlanHorizon: horizonPayload,
-      bigPlanFocusKind: bigFocusKind,
-      bigPlanFocusMaterials:
-        bigFocusKind === 'material' && bigFocusMaterials.length > 0 ? bigFocusMaterials : undefined,
-      bigPlanFocusFree: bigFocusKind === 'free' ? bigFocusFree : undefined,
+      bigPlanFocusMaterials: bigFocusMaterials.length > 0 ? bigFocusMaterials : undefined,
+      bigPlanFocusFree: bigFocusFree.trim() ? bigFocusFree : undefined,
     })
   }
 
@@ -866,86 +869,60 @@ function PlanContent() {
                 </div>
               </div>
             )}
-            <div>
-              <p className="text-[10px] font-bold text-gray-700 mb-1.5">その期間に何をやるか</p>
-              <div className="flex gap-1.5 mb-2">
-                <button
-                  type="button"
-                  onClick={() => setBigFocusKind('material')}
-                  className={`flex-1 py-2 rounded-xl text-[11px] font-black border ${
-                    bigFocusKind === 'material'
-                      ? 'bg-amber-700 text-white border-amber-800'
-                      : 'bg-white text-gray-800 border-amber-200'
-                  }`}
-                >
-                  アプリの教材名
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBigFocusKind('free')}
-                  className={`flex-1 py-2 rounded-xl text-[11px] font-black border ${
-                    bigFocusKind === 'free'
-                      ? 'bg-amber-700 text-white border-amber-800'
-                      : 'bg-white text-gray-800 border-amber-200'
-                  }`}
-                >
-                  その他・自由
-                </button>
-              </div>
-              {bigFocusKind === 'material' ? (
-                <div className="space-y-2">
-                  <p className="text-[10px] text-gray-500 leading-snug">
-                    複数選べます（例：単語・教科書・ドリル・過去問）。ページ番号は不要です。
-                  </p>
-                  {bigFocusMaterials.length > 0 && (
-                    <ul className="flex flex-wrap gap-1.5">
-                      {bigFocusMaterials.map(m => (
-                        <li
-                          key={m}
-                          className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-amber-100 text-xs font-bold text-amber-950 border border-amber-300"
+            <div className="space-y-3">
+              <p className="text-[10px] font-bold text-gray-700">その期間に何をやるか</p>
+              <div>
+                <p className="text-[10px] font-bold text-gray-600 mb-1">アプリに登録した教材</p>
+                {bigFocusMaterials.length > 0 && (
+                  <ul className="flex flex-wrap gap-1.5 mb-2">
+                    {bigFocusMaterials.map(m => (
+                      <li
+                        key={m}
+                        className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-amber-100 text-xs font-bold text-amber-950 border border-amber-300"
+                      >
+                        <span className="max-w-[200px] truncate">{m}</span>
+                        <button
+                          type="button"
+                          onClick={() => setBigFocusMaterials(bigFocusMaterials.filter(x => x !== m))}
+                          className="min-w-[28px] min-h-[28px] rounded-md text-amber-900 font-black hover:bg-amber-200/80"
+                          aria-label={`${m} を外す`}
                         >
-                          <span className="max-w-[200px] truncate">{m}</span>
-                          <button
-                            type="button"
-                            onClick={() => setBigFocusMaterials(bigFocusMaterials.filter(x => x !== m))}
-                            className="min-w-[28px] min-h-[28px] rounded-md text-amber-900 font-black hover:bg-amber-200/80"
-                            aria-label={`${m} を外す`}
-                          >
-                            ×
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <select
-                    value=""
-                    onChange={e => {
-                      const v = e.target.value
-                      if (v && !bigFocusMaterials.includes(v)) {
-                        setBigFocusMaterials([...bigFocusMaterials, v])
-                      }
-                    }}
-                    className="w-full p-3 bg-white rounded-xl text-sm font-bold border border-amber-200 outline-none"
-                  >
-                    <option value="">＋ 教材を追加（一覧から選ぶ）</option>
-                    {masterMaterials
-                      .filter(m => !bigFocusMaterials.includes(m))
-                      .map(m => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              ) : (
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <select
+                  value=""
+                  onChange={e => {
+                    const v = e.target.value
+                    if (v && !bigFocusMaterials.includes(v)) {
+                      setBigFocusMaterials([...bigFocusMaterials, v])
+                    }
+                  }}
+                  className="w-full p-2.5 bg-white rounded-xl text-sm font-bold border border-amber-200 outline-none"
+                >
+                  <option value="">＋ 一覧から追加</option>
+                  {masterMaterials
+                    .filter(m => !bigFocusMaterials.includes(m))
+                    .map(m => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                </select>
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-gray-600 mb-1">まだアプリにないもの（任意）</p>
                 <textarea
                   value={bigFocusFree}
                   onChange={e => setBigFocusFree(e.target.value)}
-                  rows={3}
-                  placeholder="例：JLPT向けの単語帳・教科書・ドリル・過去問、外の参考書、動画…"
+                  rows={2}
+                  placeholder="例：過去問、別の参考書、動画…"
                   className="w-full bg-white text-gray-900 rounded-xl p-3 text-sm font-bold outline-none border border-amber-200 focus:ring-2 focus:ring-amber-300"
                 />
-              )}
+              </div>
             </div>
             <button
               type="button"
@@ -964,14 +941,9 @@ function PlanContent() {
 
           <div className="rounded-2xl p-4 shadow-sm border border-emerald-200 bg-emerald-50/70 space-y-3">
             <div className="flex flex-wrap items-end justify-between gap-2">
-              <div>
-                <p className="text-sm font-black text-emerald-900">量の目安</p>
-                <p className="text-[10px] text-gray-600 mt-0.5">
-                  アプリの登録データから「1日あたり」を計算。月計画の文章に反映する月。
-                </p>
-              </div>
+              <p className="text-sm font-black text-emerald-900">1日の目安</p>
               <label className="flex flex-col items-end gap-0.5 min-w-[140px]">
-                <span className="text-[10px] font-bold text-gray-600">反映する月</span>
+                <span className="text-[10px] font-bold text-gray-600">月計画に反映</span>
                 <input
                   type="month"
                   value={selectedMonth}
@@ -980,35 +952,40 @@ function PlanContent() {
                 />
               </label>
             </div>
-            <label className="block text-xs font-bold text-gray-700 mb-1">何を「量」として数えるか</label>
-            <p className="text-[10px] text-gray-500 mb-1.5 leading-snug">
-              単語＝アプリの単語カードの件数。教材＝学習リソースに登録したページの枚数です。
-            </p>
-            <select
-              value={goalTemplateId}
-              onChange={e => {
-                const v = e.target.value
-                setGoalTemplateId(v)
-                if (v !== 'vocab_book') setGoalBookId('')
-                if (v !== 'textbook_pages') setGoalMaterial('')
-              }}
-              className="w-full mb-3 p-3 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
-            >
-              {GOAL_TEMPLATES.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.title}
-                </option>
-              ))}
-            </select>
+            <p className="text-[10px] text-gray-600">アプリのデータを「1日あたり」に割ります。</p>
+            <div>
+              <p className="text-[10px] font-bold text-gray-700 mb-1.5">何を数えるか</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {GOAL_TEMPLATES.map(t => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    title={t.title}
+                    onClick={() => {
+                      setGoalTemplateId(t.id)
+                      if (t.id !== 'vocab_book') setGoalBookId('')
+                      if (t.id !== 'textbook_pages') setGoalMaterial('')
+                    }}
+                    className={`py-2 px-1 rounded-xl text-[11px] font-black border ${
+                      goalTemplateId === t.id
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
+                        : 'bg-white text-gray-800 border-emerald-200'
+                    }`}
+                  >
+                    {PACING_TEMPLATE_CHIP[t.id] ?? t.title}
+                  </button>
+                ))}
+              </div>
+            </div>
             {goalTemplateId === 'vocab_book' && (
-              <label className="block mb-3">
-                <span className="text-xs font-bold text-gray-700">対象の書籍</span>
+              <label className="block">
+                <span className="text-[10px] font-bold text-gray-700">その書籍</span>
                 <select
                   value={goalBookId === '' ? '' : String(goalBookId)}
                   onChange={e => setGoalBookId(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full mt-1 p-3 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
+                  className="w-full mt-1 p-2.5 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
                 >
-                  <option value="">えらんでください</option>
+                  <option value="">選ぶ</option>
                   {flashcardBooks.map(b => (
                     <option key={b.id} value={b.id}>
                       {b.title}
@@ -1018,14 +995,14 @@ function PlanContent() {
               </label>
             )}
             {goalTemplateId === 'textbook_pages' && (
-              <label className="block mb-3">
-                <span className="text-xs font-bold text-gray-700">対象の教材</span>
+              <label className="block">
+                <span className="text-[10px] font-bold text-gray-700">その教材</span>
                 <select
                   value={goalMaterial}
                   onChange={e => setGoalMaterial(e.target.value)}
-                  className="w-full mt-1 p-3 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
+                  className="w-full mt-1 p-2.5 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
                 >
-                  <option value="">えらんでください</option>
+                  <option value="">選ぶ</option>
                   {masterMaterials.map(m => (
                     <option key={m} value={m}>
                       {m}
@@ -1035,11 +1012,8 @@ function PlanContent() {
               </label>
             )}
             <div className="grid grid-cols-2 gap-2">
-              <label className="block text-xs">
-                <span className="font-bold text-gray-700">残り何か月で割るか</span>
-                <span className="block text-[9px] text-gray-500 font-normal mt-0.5 leading-tight">
-                  上の「ゴールまでの期間」と別でもOK。目安の計算用です。
-                </span>
+              <label className="block text-xs" title="ゴールまでの期間と別でもOK。目安の割り算に使います。">
+                <span className="font-bold text-gray-700">残り（か月）</span>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -1062,11 +1036,11 @@ function PlanContent() {
                   className="w-full mt-1 p-2.5 rounded-lg border border-emerald-200 bg-white font-black text-base text-center tabular-nums"
                 />
               </label>
-              <label className="block text-xs">
-                <span className="font-bold text-gray-700">1週間に勉強する日数（1〜7）</span>
-                <span className="block text-[9px] text-gray-500 font-normal mt-0.5 leading-tight">
-                  週に「タスクを何回」ではなく、1週間のうち何日学習するか。目安を1日あたりに分けるときに使います。
-                </span>
+              <label
+                className="block text-xs"
+                title="1週間のうち何日学習するか（1〜7）。目安を1日あたりに分ける分母です。"
+              >
+                <span className="font-bold text-gray-700">週の日数</span>
                 <input
                   type="text"
                   inputMode="numeric"
@@ -1091,7 +1065,7 @@ function PlanContent() {
               </label>
             </div>
             <div>
-              <p className="text-xs font-bold text-gray-700 mb-1.5">1日の量（気持ち）</p>
+              <p className="text-[10px] font-bold text-gray-700 mb-1.5">きつさ</p>
               <div className="grid grid-cols-3 gap-1.5">
                 {(Object.keys(PACE_LABELS) as PaceLevel[]).map(k => (
                   <button
@@ -1099,7 +1073,7 @@ function PlanContent() {
                     type="button"
                     title={PACE_LABELS[k].desc}
                     onClick={() => setPaceLevel(k)}
-                    className={`py-2.5 px-1 rounded-xl text-xs font-black border min-h-[48px] flex flex-col items-center justify-center ${
+                    className={`py-2.5 px-1 rounded-xl text-xs font-black border min-h-[44px] flex flex-col items-center justify-center ${
                       paceLevel === k
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
                         : 'bg-white text-gray-800 border-emerald-200'
@@ -1128,11 +1102,14 @@ function PlanContent() {
                     ))}
                   </div>
                   {goalTemplateId === 'textbook_pages' && goalMaterial.trim() && (
-                    <p className="text-[10px] text-gray-500 leading-snug mb-3 -mt-1">
-                      ※「◯ページ」は、管理画面で
-                      <strong className="text-gray-700">教科書の総ページ数</strong>
-                      を入れているときはその数です。未設定のときだけ、学習リソースに登録したページの種類数になります。
-                    </p>
+                    <details className="text-[10px] text-gray-500 mb-2 -mt-0.5">
+                      <summary className="cursor-pointer font-bold text-gray-600 list-none [&::-webkit-details-marker]:hidden">
+                        ページ数の数え方
+                      </summary>
+                      <p className="mt-1 pl-0.5 leading-snug">
+                        管理画面の「総ページ数」があればそれを使います。未設定のときは登録済みページの種類数です。
+                      </p>
+                    </details>
                   )}
                   {pacingPreview && totalUnits > 0 ? (
                     <div className="text-center pt-2 border-t border-emerald-100">

@@ -64,12 +64,13 @@ export type GoalPacingPayload = {
   updatedAt: string
   /** 大目標：いつまでに何を（全体の〆切イメージ） */
   bigPlanHorizon?: BigPlanHorizon
-  /** material: 登録教材からざっくり / free: 動画・外の教材など自由記述 */
+  /** @deprecated 旧UI。教材と自由文は同時に保存可能 */
   bigPlanFocusKind?: 'material' | 'free'
   /** @deprecated 複数は bigPlanFocusMaterials を使用。読込時の後方互換用 */
   bigPlanFocusMaterial?: string
   /** 大目標で選ぶ教材（複数可） */
   bigPlanFocusMaterials?: string[]
+  /** 未登録の教材・過去問などを自由記述（教材と同時可） */
   bigPlanFocusFree?: string
 }
 
