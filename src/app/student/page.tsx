@@ -4,6 +4,11 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, loadPlans, updatePlan, todayStr, type UserRow, type PlanRow } from '@/lib/student'
+import { withTimeout } from '@/lib/with-timeout'
+import { MONTH_SUMMARY, planRowBelongsToMonth } from '@/lib/plan-month'
+
+const AUTH_SESSION_MS = 18000
+const USER_DATA_MS = 25000
 
 /** ホームのEXPバー用。次の区切りまでの進捗（ゲーム設計で閾値は差し替え可） */
 const EXP_BAR_SEGMENT = 100
@@ -13,19 +18,84 @@ export default function StudentHomePage() {
   const [user, setUser] = useState<UserRow | null>(null)
   const [plans, setPlans] = useState<PlanRow[]>([])
   const [loading, setLoading] = useState(true)
+  const [bootError, setBootError] = useState('')
 
   useEffect(() => {
+    let cancelled = false
     async function init() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const uname = getUsernameFromSession(session)
-      const [u, p] = await Promise.all([loadUser(uname), loadPlans(uname)])
-      setUser(u); setPlans(p); setLoading(false)
+      setBootError('')
+      try {
+        const { data: sessionData, error: sessionErr } = await withTimeout(
+          supabase.auth.getSession(),
+          AUTH_SESSION_MS,
+          'ログイン状態の確認'
+        )
+        if (sessionErr) {
+          router.replace('/login')
+          return
+        }
+        const session = sessionData.session
+        if (!session) {
+          router.replace('/login')
+          return
+        }
+        const uname = getUsernameFromSession(session)
+        if (!uname) {
+          router.replace('/login')
+          return
+        }
+        const [u, p] = await withTimeout(
+          Promise.all([loadUser(uname), loadPlans(uname)]),
+          USER_DATA_MS,
+          '学習データの読み込み'
+        )
+        if (cancelled) return
+        setUser(u)
+        setPlans(p)
+      } catch (e) {
+        console.error('student home init:', e)
+        const msg = e instanceof Error ? e.message : ''
+        if (!cancelled) {
+          setBootError(
+            msg.includes('ms を超え')
+              ? '接続がタイムアウトしました。ネットワークを確認し、再読み込みしてください。'
+              : 'データを読み込めませんでした。'
+          )
+        }
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
     }
     init()
+    return () => {
+      cancelled = true
+    }
   }, [router])
 
   const todayTasks = plans.filter(p => p.task_date === todayStr())
+  const thisMonthKey = todayStr().slice(0, 7)
+  const monthSummaryRow = plans.find(
+    p => p.task_type === MONTH_SUMMARY && p.month_plan === thisMonthKey
+  )
+  const bigGoalPreview = (plans[0]?.big_plan || '').trim() || '（大目標は「未来の計画」で書けます）'
+  const monthGoalPreview = (monthSummaryRow?.task_name || '').trim() || '（今月の到達目標を書こう）'
+  const monthLabelJa = (() => {
+    const [y, m] = thisMonthKey.split('-')
+    return y && m ? `${y}年${Number(m)}月` : thisMonthKey
+  })()
+
+  const poolThisMonthCount = plans.filter(
+    p =>
+      !p.task_date &&
+      p.is_done === 0 &&
+      p.task_type !== MONTH_SUMMARY &&
+      p.month_plan === thisMonthKey
+  ).length
+
+  const monthDoneCountHome = plans.filter(
+    p => planRowBelongsToMonth(p, thisMonthKey) && p.is_done === 1
+  ).length
+
   const doneCount = todayTasks.filter(t => t.is_done === 1).length
   const progress = todayTasks.length > 0 ? Math.round((doneCount / todayTasks.length) * 100) : 0
   const expPts = user?.current_points ?? 0
@@ -42,6 +112,24 @@ export default function StudentHomePage() {
 
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#FFFDF0] animate-pulse text-yellow-600 font-bold">🐕 作戦会議中...</div>
 
+  if (bootError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#FFFDF0] p-6 gap-4 text-center">
+        <p className="text-red-700 font-bold text-sm max-w-sm">{bootError}</p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="py-3 px-8 bg-yellow-400 text-gray-900 rounded-2xl font-black shadow"
+        >
+          再読み込み
+        </button>
+        <button type="button" onClick={() => router.replace('/login')} className="text-sm font-bold text-indigo-600 underline">
+          ログインへ戻る
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="flex-1 flex flex-col space-y-6 p-4 bg-[#FFFDF0]">
       {/* ユーザープロフィール（色味を柔らかく調整） */}
@@ -56,6 +144,33 @@ export default function StudentHomePage() {
         </div>
       </div>
 
+      {/* 計画の要約（ホーム ↔ 未来の計画） */}
+      <button
+        type="button"
+        onClick={() => router.push('/student/plan')}
+        className="w-full text-left bg-gradient-to-br from-emerald-50 to-white p-5 rounded-[2rem] border-2 border-emerald-100 shadow-sm active:scale-[0.99] transition"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <p className="text-[10px] font-black text-emerald-800 tracking-wide">未来の計画</p>
+          <span className="text-[10px] font-black text-emerald-600">編集 →</span>
+        </div>
+        <p className="text-[11px] font-black text-gray-500 mt-1">大目標</p>
+        <p className="text-sm font-bold text-gray-900 line-clamp-2 mt-0.5 leading-snug">{bigGoalPreview}</p>
+        <p className="text-[11px] font-black text-gray-500 mt-3">{monthLabelJa}の到達目標</p>
+        <p className="text-sm font-bold text-indigo-950 line-clamp-3 mt-0.5 leading-snug">{monthGoalPreview}</p>
+        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-emerald-100/90">
+          <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-white border border-emerald-100 text-emerald-900">
+            今日の予定 {todayTasks.length}件
+          </span>
+          <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-white border border-emerald-100 text-emerald-900">
+            {monthLabelJa}・プール {poolThisMonthCount}件
+          </span>
+          <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-white border border-green-200 text-green-800">
+            {monthLabelJa}・完了 {monthDoneCountHome}件
+          </span>
+        </div>
+      </button>
+
       {/* 今日のミッション（クリックで学習ページへ） */}
       <div className="space-y-3">
         <div className="flex justify-between items-end px-1">
@@ -67,7 +182,27 @@ export default function StudentHomePage() {
           {todayTasks.length === 0 ? (
             <div className="py-6 text-center space-y-4">
               <p className="text-gray-300 font-bold italic text-sm">今日はまだクエストがないよ</p>
-              <button onClick={() => router.push('/student/plan')} className="bg-yellow-400 text-gray-800 px-8 py-3 rounded-2xl font-black text-sm shadow-md active:scale-95 transition">🗓️ 計画をたてる</button>
+              {poolThisMonthCount > 0 && (
+                <div className="rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-left">
+                  <p className="text-xs font-bold text-amber-900 leading-relaxed">
+                    プールにタスクが{poolThisMonthCount}件あります。「日々の予定」で日付を付けて、今日の予定に入れよう。
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/student/plan?tab=daily')}
+                    className="mt-3 w-full py-2.5 rounded-xl bg-amber-400 text-gray-900 text-xs font-black shadow-sm active:scale-[0.99]"
+                  >
+                    日々の予定を開く →
+                  </button>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => router.push('/student/plan')}
+                className="bg-yellow-400 text-gray-800 px-8 py-3 rounded-2xl font-black text-sm shadow-md active:scale-95 transition"
+              >
+                🗓️ 計画をたてる
+              </button>
             </div>
           ) : (
             <div className="space-y-4">
