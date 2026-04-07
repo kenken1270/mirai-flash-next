@@ -63,6 +63,10 @@
 
 - `users.current_points` をもとに、**100 EXP ごとの区間内進捗**（`current_points % 100`）をプログレスバーに表示。Lv計算式が固まったら `docs` と定数を更新する。
 
+### デプロイ運用（本番 / 開発）
+
+- 日々は **`dev` → プレビュー**、本番更新は **`main` マージでまとめて** する方針。詳細は [deployment-workflow.md](./deployment-workflow.md)。
+
 ### 今後追記
 
 - 教材キー、セットID規則、環境変数名など
