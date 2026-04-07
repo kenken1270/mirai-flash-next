@@ -128,7 +128,8 @@ function PlanContent() {
   const [bigHorizonUnit, setBigHorizonUnit] = useState<BigPlanHorizonUnit>('months')
   const [bigHorizonValue, setBigHorizonValue] = useState('6')
   const [bigFocusKind, setBigFocusKind] = useState<'material' | 'free'>('free')
-  const [bigFocusMaterial, setBigFocusMaterial] = useState('')
+  /** 大目標「アプリの教材名」— 複数選択可 */
+  const [bigFocusMaterials, setBigFocusMaterials] = useState<string[]>([])
   const [bigFocusFree, setBigFocusFree] = useState('')
   const [countLines, setCountLines] = useState<CountLine[]>([])
   const [totalUnits, setTotalUnits] = useState(0)
@@ -262,7 +263,13 @@ function PlanContent() {
         setBigHorizonValue(String(Math.max(1, saved.bigPlanHorizon.value)))
       }
       if (saved.bigPlanFocusKind) setBigFocusKind(saved.bigPlanFocusKind)
-      if (saved.bigPlanFocusMaterial != null) setBigFocusMaterial(saved.bigPlanFocusMaterial)
+      if (saved.bigPlanFocusMaterials?.length) {
+        setBigFocusMaterials(saved.bigPlanFocusMaterials)
+      } else if (saved.bigPlanFocusMaterial?.trim()) {
+        setBigFocusMaterials([saved.bigPlanFocusMaterial.trim()])
+      } else {
+        setBigFocusMaterials([])
+      }
       if (saved.bigPlanFocusFree != null) setBigFocusFree(saved.bigPlanFocusFree)
     })()
   }, [username])
@@ -539,7 +546,8 @@ function PlanContent() {
       updatedAt: new Date().toISOString(),
       bigPlanHorizon: horizonPayload,
       bigPlanFocusKind: bigFocusKind,
-      bigPlanFocusMaterial: bigFocusKind === 'material' ? bigFocusMaterial : undefined,
+      bigPlanFocusMaterials:
+        bigFocusKind === 'material' && bigFocusMaterials.length > 0 ? bigFocusMaterials : undefined,
       bigPlanFocusFree: bigFocusKind === 'free' ? bigFocusFree : undefined,
     })
   }
@@ -885,24 +893,56 @@ function PlanContent() {
                 </button>
               </div>
               {bigFocusKind === 'material' ? (
-                <select
-                  value={bigFocusMaterial}
-                  onChange={e => setBigFocusMaterial(e.target.value)}
-                  className="w-full p-3 bg-white rounded-xl text-sm font-bold border border-amber-200 outline-none"
-                >
-                  <option value="">教材名を選ぶ（ページは不要）</option>
-                  {masterMaterials.map(m => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <p className="text-[10px] text-gray-500 leading-snug">
+                    複数選べます（例：単語・教科書・ドリル・過去問）。ページ番号は不要です。
+                  </p>
+                  {bigFocusMaterials.length > 0 && (
+                    <ul className="flex flex-wrap gap-1.5">
+                      {bigFocusMaterials.map(m => (
+                        <li
+                          key={m}
+                          className="inline-flex items-center gap-1 pl-2.5 pr-1 py-1 rounded-lg bg-amber-100 text-xs font-bold text-amber-950 border border-amber-300"
+                        >
+                          <span className="max-w-[200px] truncate">{m}</span>
+                          <button
+                            type="button"
+                            onClick={() => setBigFocusMaterials(bigFocusMaterials.filter(x => x !== m))}
+                            className="min-w-[28px] min-h-[28px] rounded-md text-amber-900 font-black hover:bg-amber-200/80"
+                            aria-label={`${m} を外す`}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <select
+                    value=""
+                    onChange={e => {
+                      const v = e.target.value
+                      if (v && !bigFocusMaterials.includes(v)) {
+                        setBigFocusMaterials([...bigFocusMaterials, v])
+                      }
+                    }}
+                    className="w-full p-3 bg-white rounded-xl text-sm font-bold border border-amber-200 outline-none"
+                  >
+                    <option value="">＋ 教材を追加（一覧から選ぶ）</option>
+                    {masterMaterials
+                      .filter(m => !bigFocusMaterials.includes(m))
+                      .map(m => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               ) : (
                 <textarea
                   value={bigFocusFree}
                   onChange={e => setBigFocusFree(e.target.value)}
                   rows={3}
-                  placeholder="例：外の参考書、動画視聴、オンライン講座…"
+                  placeholder="例：JLPT向けの単語帳・教科書・ドリル・過去問、外の参考書、動画…"
                   className="w-full bg-white text-gray-900 rounded-xl p-3 text-sm font-bold outline-none border border-amber-200 focus:ring-2 focus:ring-amber-300"
                 />
               )}

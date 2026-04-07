@@ -66,7 +66,10 @@ export type GoalPacingPayload = {
   bigPlanHorizon?: BigPlanHorizon
   /** material: 登録教材からざっくり / free: 動画・外の教材など自由記述 */
   bigPlanFocusKind?: 'material' | 'free'
+  /** @deprecated 複数は bigPlanFocusMaterials を使用。読込時の後方互換用 */
   bigPlanFocusMaterial?: string
+  /** 大目標で選ぶ教材（複数可） */
+  bigPlanFocusMaterials?: string[]
   bigPlanFocusFree?: string
 }
 
