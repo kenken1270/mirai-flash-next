@@ -96,8 +96,9 @@ function PlanContent() {
   const [bigPlanDraft, setBigPlanDraft] = useState('')
   const [savingBig, setSavingBig] = useState(false)
 
-  const [monthGoalDraft, setMonthGoalDraft] = useState('')
-  const [savingMonth, setSavingMonth] = useState(false)
+  /** 月ごとの到達メモ（month_summary） */
+  const [monthMemos, setMonthMemos] = useState<Record<string, string>>({})
+  const [savingMonthKey, setSavingMonthKey] = useState<string | null>(null)
 
   const [newStock, setNewStock] = useState({
     task_name: '',
@@ -129,6 +130,8 @@ function PlanContent() {
   const [countLines, setCountLines] = useState<CountLine[]>([])
   const [totalUnits, setTotalUnits] = useState(0)
   const [initError, setInitError] = useState<string | null>(null)
+  /** 「ベースの割り振りにする」と入力して実行する用 */
+  const [baseAllocateInput, setBaseAllocateInput] = useState('')
 
   /** 空欄・途中入力時はプレビュー用に既定値を使う（保存・反映は blur 後の文字列を基準にする） */
   const pacingMonths = useMemo(() => {
@@ -161,6 +164,27 @@ function PlanContent() {
     if (total <= 0) return 100
     const elapsed = Date.now() - start.getTime()
     return Math.min(100, Math.max(0, (elapsed / total) * 100))
+  }, [bigHorizonValue, bigHorizonUnit])
+
+  /** 大計画の期間に含まれる暦月（今月〜終了月） */
+  const horizonMonthKeys = useMemo(() => {
+    const hv = parseInt(bigHorizonValue.trim(), 10)
+    if (Number.isNaN(hv) || hv < 1) {
+      return [monthKeyFromDate(todayStr())]
+    }
+    const end = addHorizonFromToday(bigHorizonUnit, hv)
+    const start = new Date()
+    start.setDate(1)
+    start.setHours(0, 0, 0, 0)
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1)
+    const keys: string[] = []
+    const d = new Date(start.getFullYear(), start.getMonth(), 1)
+    while (d <= endMonth) {
+      keys.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`)
+      d.setMonth(d.getMonth() + 1)
+    }
+    if (keys.length === 0) keys.push(monthKeyFromDate(todayStr()))
+    return keys
   }, [bigHorizonValue, bigHorizonUnit])
 
   const refreshPlans = useCallback(async () => {
@@ -319,9 +343,14 @@ function PlanContent() {
   }, [username, goalTemplateId, goalMaterial, goalBookId])
 
   useEffect(() => {
-    const row = plans.find(x => x.task_type === MONTH_SUMMARY && x.month_plan === selectedMonth)
-    setMonthGoalDraft(row?.task_name ?? '')
-  }, [plans, selectedMonth])
+    const memos: Record<string, string> = {}
+    for (const p of plans) {
+      if (p.task_type === MONTH_SUMMARY && p.month_plan) {
+        memos[p.month_plan] = p.task_name ?? ''
+      }
+    }
+    setMonthMemos(memos)
+  }, [plans])
 
   useEffect(() => {
     async function fetchPages() {
@@ -414,12 +443,12 @@ function PlanContent() {
     }
   }
 
-  async function saveMonthGoal() {
+  async function saveMonthMemo(monthKey: string) {
     if (!username) return
-    setSavingMonth(true)
+    setSavingMonthKey(monthKey)
     try {
-      const existing = plans.find(p => p.task_type === MONTH_SUMMARY && p.month_plan === selectedMonth)
-      const text = monthGoalDraft.trim()
+      const existing = plans.find(p => p.task_type === MONTH_SUMMARY && p.month_plan === monthKey)
+      const text = (monthMemos[monthKey] ?? '').trim()
       if (existing) {
         await updatePlan(existing.id, { task_name: text || '（今月の目標を書こう）' })
       } else {
@@ -436,14 +465,35 @@ function PlanContent() {
           material_id: '',
           page_range: '',
           deadline: '',
-          month_plan: selectedMonth,
+          month_plan: monthKey,
         })
       }
       await refreshPlans()
-      showToast('📅 今月の計画を保存したよ')
+      showToast('📅 月のメモを保存したよ')
     } finally {
-      setSavingMonth(false)
+      setSavingMonthKey(null)
     }
+  }
+
+  /** 教材ページを大計画の月数に均等割り。前の月から累積で埋め、到達したら以降の月は空欄 */
+  async function applyBasePageAllocation() {
+    const N = horizonMonthKeys.length
+    if (N === 0 || bigFocusMaterials.length === 0) return
+    const next: Record<string, Record<string, number>> = { ...monthPageTargets }
+    for (const mat of bigFocusMaterials) {
+      const T = materialPageTotals[mat] ?? 0
+      if (T <= 0) continue
+      const inner: Record<string, number> = {}
+      for (let i = 0; i < N; i++) {
+        const cum = Math.min(T, Math.ceil(((i + 1) * T) / N))
+        inner[horizonMonthKeys[i]] = cum
+        if (cum >= T) break
+      }
+      next[mat] = inner
+    }
+    setMonthPageTargets(next)
+    await persistGoalPacing(next)
+    showToast('📚 ベースの割り振りを反映したよ')
   }
 
   async function addStockTask() {
@@ -512,8 +562,9 @@ function PlanContent() {
     setSelectedMonth(key)
   }
 
-  async function persistGoalPacing() {
+  async function persistGoalPacing(overrideMonthPageTargets?: Record<string, Record<string, number>>) {
     if (!username) return
+    const targets = overrideMonthPageTargets ?? monthPageTargets
     const hv = parseInt(bigHorizonValue.trim(), 10)
     const horizonPayload =
       !Number.isNaN(hv) && hv > 0
@@ -531,8 +582,7 @@ function PlanContent() {
       bigPlanHorizon: horizonPayload,
       bigPlanFocusMaterials: bigFocusMaterials.length > 0 ? bigFocusMaterials : undefined,
       bigPlanFocusFree: bigFocusFree.trim() ? bigFocusFree : undefined,
-      monthPageTargets:
-        Object.keys(monthPageTargets).length > 0 ? monthPageTargets : undefined,
+      monthPageTargets: Object.keys(targets).length > 0 ? targets : undefined,
     })
   }
 
@@ -751,66 +801,118 @@ function PlanContent() {
       {/* ── 月計画 ── */}
       {tab === 'month' && (
         <div className="flex-1 px-3 py-4 space-y-4 bg-white min-h-[50vh]">
-          <div className="flex items-center justify-between gap-2 bg-gray-50 rounded-xl p-2 border border-gray-200">
-            <button type="button" onClick={() => shiftMonth(-1)} className="min-w-[44px] min-h-[44px] rounded-lg bg-white border border-gray-200 font-bold text-gray-700 shadow-sm">
-              前月
-            </button>
-            <p className="text-center font-black text-gray-900 flex-1 text-base">
-              {selectedMonth.split('-')[0]}年{Number(selectedMonth.split('-')[1])}月
-            </p>
-            <button type="button" onClick={() => shiftMonth(1)} className="min-w-[44px] min-h-[44px] rounded-lg bg-white border border-gray-200 font-bold text-gray-700 shadow-sm">
-              翌月
-            </button>
-          </div>
+          <p className="text-xs font-bold text-gray-600">
+            大計画の期間（{horizonMonthKeys[0]} 〜 {horizonMonthKeys[horizonMonthKeys.length - 1]}）の月を一覧で編集できます。
+          </p>
 
           {bigFocusMaterials.length > 0 ? (
-            <div className="rounded-2xl p-4 border border-emerald-200 bg-emerald-50/70 space-y-3">
-              <p className="text-sm font-black text-emerald-900">教材のページ（この月までにどこまで）</p>
-              {bigFocusMaterials.map(mat => {
-                const total = materialPageTotals[mat] ?? 0
-                const cur = monthPageTargets[mat]?.[selectedMonth]
-                return (
-                  <div key={mat} className="rounded-xl bg-white border border-emerald-100 p-3">
-                    <p className="text-xs font-black text-gray-900 truncate" title={mat}>
-                      {mat}
-                    </p>
-                    <p className="text-[10px] text-gray-500 mt-0.5">
-                      全{total > 0 ? total : '—'}ページ
-                    </p>
-                    <label className="flex items-center gap-2 mt-2">
-                      <span className="text-xs font-bold text-gray-700 whitespace-nowrap">この月の終わりまで</span>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        className="flex-1 min-w-0 p-2 rounded-lg border border-emerald-200 font-black text-center text-sm tabular-nums"
-                        placeholder="ページ"
-                        value={cur !== undefined ? String(cur) : ''}
-                        onChange={e => {
-                          const raw = e.target.value.replace(/\D/g, '').slice(0, 4)
-                          setMonthPageTargets(prev => {
-                            const inner = { ...(prev[mat] || {}) }
-                            if (raw === '') {
-                              delete inner[selectedMonth]
-                            } else {
-                              const n = parseInt(raw, 10)
-                              if (!Number.isNaN(n) && n >= 1) inner[selectedMonth] = Math.min(9999, n)
+            <>
+              <div className="rounded-2xl p-4 border border-violet-200 bg-violet-50/60 space-y-2">
+                <p className="text-sm font-black text-violet-900">ベースの割り振り</p>
+                <p className="text-[11px] text-violet-950/80 leading-relaxed">
+                  下に <span className="font-black">ベースの割り振りにする</span> と入力すると、大目標の教材を期間内で終わるようページを自動入力します（前の月から詰めます。余った月は空欄のまま）。
+                </p>
+                <input
+                  type="text"
+                  value={baseAllocateInput}
+                  onChange={e => setBaseAllocateInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key !== 'Enter') return
+                    if (baseAllocateInput.trim() === 'ベースの割り振りにする') {
+                      void applyBasePageAllocation()
+                      setBaseAllocateInput('')
+                    }
+                  }}
+                  onBlur={() => {
+                    if (baseAllocateInput.trim() !== 'ベースの割り振りにする') return
+                    void applyBasePageAllocation()
+                    setBaseAllocateInput('')
+                  }}
+                  placeholder="ベースの割り振りにする"
+                  className="w-full p-2.5 rounded-xl border border-violet-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-violet-300"
+                />
+              </div>
+
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 overflow-hidden">
+                <div className="px-3 py-2 bg-emerald-100/80 border-b border-emerald-200">
+                  <p className="text-sm font-black text-emerald-900">教材のページ（各月の終わりまでにどこまで）</p>
+                </div>
+                <div className="max-h-[min(70vh,520px)] overflow-y-auto divide-y divide-emerald-100">
+                  {horizonMonthKeys.map(monthKey => {
+                    const [yy, mm] = monthKey.split('-')
+                    return (
+                      <div key={monthKey} className="p-3 space-y-3 bg-white/90">
+                        <p className="text-xs font-black text-emerald-950">
+                          {yy}年{Number(mm)}月
+                        </p>
+                        {bigFocusMaterials.map(mat => {
+                          const total = materialPageTotals[mat] ?? 0
+                          const cur = monthPageTargets[mat]?.[monthKey]
+                          return (
+                            <div key={`${monthKey}-${mat}`} className="rounded-xl bg-emerald-50/50 border border-emerald-100 p-2.5">
+                              <p className="text-[11px] font-black text-gray-900 truncate" title={mat}>
+                                {mat}
+                              </p>
+                              <p className="text-[10px] text-gray-500 mt-0.5">全{total > 0 ? total : '—'}ページ</p>
+                              <label className="flex items-center gap-2 mt-1.5 flex-wrap">
+                                <span className="text-[11px] font-bold text-gray-700 whitespace-nowrap">この月の終わりまで</span>
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  className="flex-1 min-w-[4rem] max-w-[120px] p-2 rounded-lg border border-emerald-200 font-black text-center text-sm tabular-nums"
+                                  placeholder="ページ"
+                                  value={cur !== undefined ? String(cur) : ''}
+                                  onChange={e => {
+                                    const raw = e.target.value.replace(/\D/g, '').slice(0, 4)
+                                    setMonthPageTargets(prev => {
+                                      const inner = { ...(prev[mat] || {}) }
+                                      if (raw === '') {
+                                        delete inner[monthKey]
+                                      } else {
+                                        const n = parseInt(raw, 10)
+                                        if (!Number.isNaN(n) && n >= 1) inner[monthKey] = Math.min(9999, n)
+                                      }
+                                      const next = { ...prev }
+                                      if (Object.keys(inner).length === 0) delete next[mat]
+                                      else next[mat] = inner
+                                      return next
+                                    })
+                                  }}
+                                  onBlur={() => {
+                                    setTimeout(() => void persistGoalPacing(), 0)
+                                  }}
+                                />
+                                <span className="text-[11px] font-bold text-gray-600">ページ</span>
+                              </label>
+                            </div>
+                          )
+                        })}
+                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5">
+                          <p className="text-[11px] font-black text-indigo-900 mb-1">{monthKey} のメモ</p>
+                          <textarea
+                            value={monthMemos[monthKey] ?? ''}
+                            onChange={e =>
+                              setMonthMemos(prev => ({ ...prev, [monthKey]: e.target.value }))
                             }
-                            const next = { ...prev }
-                            if (Object.keys(inner).length === 0) delete next[mat]
-                            else next[mat] = inner
-                            return next
-                          })
-                        }}
-                        onBlur={() => {
-                          setTimeout(() => void persistGoalPacing(), 0)
-                        }}
-                      />
-                      <span className="text-xs font-bold text-gray-600">ページ</span>
-                    </label>
-                  </div>
-                )
-              })}
-            </div>
+                            rows={2}
+                            className="w-full bg-white rounded-lg p-2 text-xs font-bold outline-none border border-indigo-100"
+                            placeholder="自由に書いてOK"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void saveMonthMemo(monthKey)}
+                            disabled={savingMonthKey === monthKey}
+                            className="mt-2 w-full py-2 bg-indigo-600 text-white rounded-lg font-black text-xs disabled:opacity-50"
+                          >
+                            {savingMonthKey === monthKey ? '保存中…' : 'この月のメモを保存'}
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
           ) : (
             <button
               type="button"
@@ -828,27 +930,29 @@ function PlanContent() {
             </div>
           ) : null}
 
-          <div className="rounded-2xl p-4 border border-indigo-100 bg-indigo-50/40 shadow-sm">
-            <p className="text-sm font-black text-indigo-900 mb-2">この月のメモ</p>
-            <textarea
-              value={monthGoalDraft}
-              onChange={e => setMonthGoalDraft(e.target.value)}
-              rows={3}
-              className="w-full bg-white rounded-xl p-3 text-sm font-bold outline-none border border-indigo-100"
-              placeholder="自由に書いてOK"
-            />
-            <button
-              type="button"
-              onClick={saveMonthGoal}
-              disabled={savingMonth}
-              className="mt-3 w-full py-3 bg-indigo-600 text-white rounded-xl font-black text-sm disabled:opacity-50"
-            >
-              {savingMonth ? '保存中…' : '保存'}
-            </button>
-          </div>
-
           <div>
-            <p className="text-xs font-black text-gray-700 mb-2">今月のタスク（未完了）</p>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-black text-gray-700">タスク一覧（未完了）</p>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => shiftMonth(-1)}
+                  className="min-h-[36px] px-2 rounded-lg bg-gray-100 border border-gray-200 text-xs font-bold text-gray-700"
+                >
+                  前月
+                </button>
+                <p className="text-xs font-black text-gray-900 min-w-[5rem] text-center">
+                  {selectedMonth.split('-')[0]}年{Number(selectedMonth.split('-')[1])}月
+                </p>
+                <button
+                  type="button"
+                  onClick={() => shiftMonth(1)}
+                  className="min-h-[36px] px-2 rounded-lg bg-gray-100 border border-gray-200 text-xs font-bold text-gray-700"
+                >
+                  翌月
+                </button>
+              </div>
+            </div>
             {monthTasks.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
                 まだありません。「日々の予定」から追加すると月に紐づきます
