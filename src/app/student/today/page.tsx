@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, loadPlans, type UserRow, type PlanRow } from '@/lib/student'
 
 export default function TodayPage() {
@@ -15,7 +16,7 @@ export default function TodayPage() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const username = session.user.email?.split('@')[0] ?? ''
+      const username = getUsernameFromSession(session)
       const u = await loadUser(username)
       const plans = await loadPlans(username)
       const todayTasks = plans.filter(p => p.task_date === today)
@@ -100,7 +101,7 @@ export default function TodayPage() {
                   </div>
                   {task.is_done !== 1 ? (
                     <button
-                      onClick={() => router.push('/student/do/' + task.id)}
+                      onClick={() => router.push(`/student/study?taskId=${task.id}`)}
                       className="px-4 py-2 bg-gradient-to-r from-orange-500 to-yellow-500 text-white rounded-xl text-sm font-bold whitespace-nowrap shadow"
                     >
                       ▶️ やる！

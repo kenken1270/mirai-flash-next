@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 
 type QuizResult = {
   id: number
@@ -83,7 +84,7 @@ function ResultContent() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
+      const uname = getUsernameFromSession(session)
       const { data: results } = await supabase
         .from('quiz_results').select('*').eq('username', uname)
         .order('taken_at', { ascending: false }).limit(10)

@@ -2,7 +2,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, loadPlans, updatePlan, todayStr, type UserRow, type PlanRow } from '@/lib/student'
+
+/** ホームのEXPバー用。次の区切りまでの進捗（ゲーム設計で閾値は差し替え可） */
+const EXP_BAR_SEGMENT = 100
 
 export default function StudentHomePage() {
   const router = useRouter()
@@ -14,7 +18,7 @@ export default function StudentHomePage() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.split('@')[0] ?? ''
+      const uname = getUsernameFromSession(session)
       const [u, p] = await Promise.all([loadUser(uname), loadPlans(uname)])
       setUser(u); setPlans(p); setLoading(false)
     }
@@ -24,6 +28,10 @@ export default function StudentHomePage() {
   const todayTasks = plans.filter(p => p.task_date === todayStr())
   const doneCount = todayTasks.filter(t => t.is_done === 1).length
   const progress = todayTasks.length > 0 ? Math.round((doneCount / todayTasks.length) * 100) : 0
+  const expPts = user?.current_points ?? 0
+  const expBarPct = EXP_BAR_SEGMENT > 0
+    ? Math.min(100, Math.round(((expPts % EXP_BAR_SEGMENT) / EXP_BAR_SEGMENT) * 100))
+    : 0
 
   async function toggleDone(e: React.MouseEvent, task: PlanRow) {
     e.stopPropagation() // 親要素のクリックイベント（ページ遷移）を防ぐ
@@ -43,7 +51,7 @@ export default function StudentHomePage() {
           <h2 className="font-black text-base text-gray-700">{user?.nickname || user?.username} さん</h2>
           <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Level {user?.grade_num || 1} · {user?.current_points || 0} EXP</p>
           <div className="h-1.5 w-full bg-gray-50 rounded-full mt-2 overflow-hidden border border-gray-100">
-            <div className="h-full bg-yellow-400" style={{ width: '40%' }}></div>
+            <div className="h-full bg-yellow-400 transition-all duration-500" style={{ width: `${expBarPct}%` }}></div>
           </div>
         </div>
       </div>

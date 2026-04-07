@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, BarChart, Bar, Legend
@@ -39,7 +40,7 @@ export default function FlashGraphPage() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') || ''
+      const uname = getUsernameFromSession(session)
       setUsername(uname)
       await fetchData(uname)
     }

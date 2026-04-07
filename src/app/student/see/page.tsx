@@ -2,6 +2,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, updatePlan, type UserRow, type PlanRow } from '@/lib/student'
 
 const SEE_STAMPS = [
@@ -44,7 +45,7 @@ function SeeContent() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const username = session.user.email?.split('@')[0] ?? ''
+      const username = getUsernameFromSession(session)
       const u = await loadUser(username)
       setUser(u)
       if (taskId) {
@@ -78,7 +79,7 @@ function SeeContent() {
       console.error('Save error:', e)
     }
     const dest =
-      nextAction === 'retry'     ? '/student/do/' + task.id :
+      nextAction === 'retry'     ? `/student/study?taskId=${task.id}` :
       nextAction === 'help'      ? '/student/help?task_id=' + task.id :
       nextAction === 'next_task' ? '/student/today' :
       nextAction === 'rest'      ? '/student/break' :
