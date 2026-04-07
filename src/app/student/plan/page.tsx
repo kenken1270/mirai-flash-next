@@ -19,6 +19,7 @@ import {
   GOAL_TEMPLATES,
   PACE_LABELS,
   type PaceLevel,
+  type BigPlanHorizonUnit,
   fetchTemplateCounts,
   computePacing,
   buildMonthSummaryDraft,
@@ -60,6 +61,29 @@ function formatDateJa(iso: string): string {
   return `${d.getMonth() + 1}月${d.getDate()}日（${w}）`
 }
 
+function dateToLocalIso(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+/** 今日0時からのゴール日（期間の終わりイメージ） */
+function addHorizonFromToday(unit: BigPlanHorizonUnit, value: number): Date {
+  const d = new Date()
+  d.setHours(0, 0, 0, 0)
+  if (unit === 'days') d.setDate(d.getDate() + value)
+  else if (unit === 'months') d.setMonth(d.getMonth() + value)
+  else d.setFullYear(d.getFullYear() + value)
+  return d
+}
+
+function horizonToApproxMonths(unit: BigPlanHorizonUnit, value: number): number {
+  if (unit === 'days') return Math.max(1, Math.min(36, Math.round(value / 30)))
+  if (unit === 'months') return Math.max(1, Math.min(36, value))
+  return Math.max(1, Math.min(36, value * 12))
+}
+
 type TabId = 'big' | 'month' | 'daily'
 
 function PlanContent() {
@@ -97,12 +121,52 @@ function PlanContent() {
   const [flashcardBooks, setFlashcardBooks] = useState<{ id: number; title: string }[]>([])
   const [goalBookId, setGoalBookId] = useState<number | ''>('')
   const [paceLevel, setPaceLevel] = useState<PaceLevel>('standard')
-  const [monthsRemaining, setMonthsRemaining] = useState(6)
-  const [studyDaysPerWeek, setStudyDaysPerWeek] = useState(5)
+  /** 入力中は空欄OK。blur で 1〜36 に整える */
+  const [monthsInput, setMonthsInput] = useState('6')
+  /** 入力中は空欄OK。blur で 1〜7 に整える */
+  const [weeksInput, setWeeksInput] = useState('5')
+  const [bigHorizonUnit, setBigHorizonUnit] = useState<BigPlanHorizonUnit>('months')
+  const [bigHorizonValue, setBigHorizonValue] = useState('6')
+  const [bigFocusKind, setBigFocusKind] = useState<'material' | 'free'>('free')
+  const [bigFocusMaterial, setBigFocusMaterial] = useState('')
+  const [bigFocusFree, setBigFocusFree] = useState('')
   const [countLines, setCountLines] = useState<CountLine[]>([])
   const [totalUnits, setTotalUnits] = useState(0)
   const [loadingCounts, setLoadingCounts] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
+
+  /** 空欄・途中入力時はプレビュー用に既定値を使う（保存・反映は blur 後の文字列を基準にする） */
+  const pacingMonths = useMemo(() => {
+    const t = monthsInput.trim()
+    const n = parseInt(t, 10)
+    if (t === '' || Number.isNaN(n)) return 6
+    return Math.max(1, Math.min(36, n))
+  }, [monthsInput])
+
+  const pacingWeeks = useMemo(() => {
+    const t = weeksInput.trim()
+    const n = parseInt(t, 10)
+    if (t === '' || Number.isNaN(n)) return 5
+    return Math.max(1, Math.min(7, n))
+  }, [weeksInput])
+
+  const bigHorizonEnd = useMemo(() => {
+    const n = parseInt(bigHorizonValue.trim(), 10)
+    if (Number.isNaN(n) || n <= 0) return null
+    return addHorizonFromToday(bigHorizonUnit, n)
+  }, [bigHorizonValue, bigHorizonUnit])
+
+  const bigHorizonTimeProgressPct = useMemo(() => {
+    const n = parseInt(bigHorizonValue.trim(), 10)
+    if (Number.isNaN(n) || n <= 0) return null
+    const start = new Date()
+    start.setHours(0, 0, 0, 0)
+    const end = addHorizonFromToday(bigHorizonUnit, n)
+    const total = end.getTime() - start.getTime()
+    if (total <= 0) return 100
+    const elapsed = Date.now() - start.getTime()
+    return Math.min(100, Math.max(0, (elapsed / total) * 100))
+  }, [bigHorizonValue, bigHorizonUnit])
 
   const refreshPlans = useCallback(async () => {
     if (!username) return
@@ -191,8 +255,15 @@ function PlanContent() {
       setGoalMaterial(saved.materialName ?? '')
       if (saved.bookId != null) setGoalBookId(saved.bookId)
       setPaceLevel(saved.pace)
-      setMonthsRemaining(Math.max(1, saved.monthsRemaining))
-      setStudyDaysPerWeek(Math.min(7, Math.max(1, saved.studyDaysPerWeek)))
+      setMonthsInput(String(Math.max(1, Math.min(36, saved.monthsRemaining))))
+      setWeeksInput(String(Math.min(7, Math.max(1, saved.studyDaysPerWeek))))
+      if (saved.bigPlanHorizon) {
+        setBigHorizonUnit(saved.bigPlanHorizon.unit)
+        setBigHorizonValue(String(Math.max(1, saved.bigPlanHorizon.value)))
+      }
+      if (saved.bigPlanFocusKind) setBigFocusKind(saved.bigPlanFocusKind)
+      if (saved.bigPlanFocusMaterial != null) setBigFocusMaterial(saved.bigPlanFocusMaterial)
+      if (saved.bigPlanFocusFree != null) setBigFocusFree(saved.bigPlanFocusFree)
     })()
   }, [username])
 
@@ -273,8 +344,8 @@ function PlanContent() {
 
   const pacingPreview = useMemo(() => {
     if (totalUnits <= 0) return null
-    return computePacing(totalUnits, monthsRemaining, studyDaysPerWeek, paceLevel)
-  }, [totalUnits, monthsRemaining, studyDaysPerWeek, paceLevel])
+    return computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
+  }, [totalUnits, pacingMonths, pacingWeeks, paceLevel])
 
   const stockTasks = useMemo(
     () => plans.filter(p => !p.task_date && p.is_done === 0 && p.task_type !== MONTH_SUMMARY),
@@ -345,6 +416,7 @@ function PlanContent() {
       }
       await supabase.from('plans').update({ big_plan: bigPlanDraft.trim() || 'マイ目標' }).eq('username', username)
       await refreshPlans()
+      await persistGoalPacing()
       showToast('🏆 大計画を保存したよ')
     } finally {
       setSavingBig(false)
@@ -451,15 +523,24 @@ function PlanContent() {
 
   async function persistGoalPacing() {
     if (!username) return
+    const hv = parseInt(bigHorizonValue.trim(), 10)
+    const horizonPayload =
+      !Number.isNaN(hv) && hv > 0
+        ? { unit: bigHorizonUnit, value: hv } as const
+        : undefined
     await saveGoalPacing(username, {
       templateId: goalTemplateId,
       materialName: goalTemplateId === 'textbook_pages' ? goalMaterial : undefined,
       bookId:
         goalTemplateId === 'vocab_book' && goalBookId !== '' ? Number(goalBookId) : undefined,
       pace: paceLevel,
-      monthsRemaining,
-      studyDaysPerWeek,
+      monthsRemaining: pacingMonths,
+      studyDaysPerWeek: pacingWeeks,
       updatedAt: new Date().toISOString(),
+      bigPlanHorizon: horizonPayload,
+      bigPlanFocusKind: bigFocusKind,
+      bigPlanFocusMaterial: bigFocusKind === 'material' ? bigFocusMaterial : undefined,
+      bigPlanFocusFree: bigFocusKind === 'free' ? bigFocusFree : undefined,
     })
   }
 
@@ -469,7 +550,7 @@ function PlanContent() {
       showToast('量が0のため追加できません')
       return
     }
-    const p = computePacing(totalUnits, monthsRemaining, studyDaysPerWeek, paceLevel)
+    const p = computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
     const daily = Math.max(1, Math.ceil(p.dailyUnits))
     const paceName = PACE_LABELS[paceLevel].label
     let mid = ''
@@ -522,7 +603,7 @@ function PlanContent() {
     const p = pacingPreview
     const extra =
       p && totalUnits > 0
-        ? `【量の目安・${PACE_LABELS[paceLevel].label}】約${Math.max(1, Math.ceil(p.dailyUnits))}単位/日（全${totalUnits}・残り${monthsRemaining}か月・週${studyDaysPerWeek}日想定）`
+        ? `【量の目安・${PACE_LABELS[paceLevel].label}】約${Math.max(1, Math.ceil(p.dailyUnits))}単位/日（全${totalUnits}・残り${pacingMonths}か月・週${pacingWeeks}日想定）`
         : '【量の目安】教材・単語データを登録すると、日の目安が出ます。'
     const next = [tmpl?.bigPlanExample ?? '', extra].filter(Boolean).join('\n\n')
     setBigPlanDraft(next)
@@ -533,7 +614,7 @@ function PlanContent() {
   async function applyPacingToSelectedMonth() {
     if (!username) return
     const tmpl = GOAL_TEMPLATES.find(t => t.id === goalTemplateId)
-    const p = computePacing(totalUnits, monthsRemaining, studyDaysPerWeek, paceLevel)
+    const p = computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
     const draft = buildMonthSummaryDraft(tmpl?.title ?? '計画', countLines, p)
     setMonthGoalDraft(draft)
     const existing = plans.find(x => x.task_type === MONTH_SUMMARY && x.month_plan === selectedMonth)
@@ -568,7 +649,7 @@ function PlanContent() {
       showToast('量が0のため追加できません')
       return
     }
-    const p = computePacing(totalUnits, monthsRemaining, studyDaysPerWeek, paceLevel)
+    const p = computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
     const daily = Math.max(1, Math.ceil(p.dailyUnits))
     const paceName = PACE_LABELS[paceLevel].label
     const unit = goalTemplateId === 'textbook_pages' ? 'ページ' : '語'
@@ -721,30 +802,148 @@ function PlanContent() {
             </button>
           </div>
 
-          <div className="rounded-2xl p-4 shadow-sm border border-emerald-200 bg-emerald-50/70">
-            <p className="text-sm font-black text-emerald-900 mb-1">目標テンプレートとペース</p>
-            <p className="text-xs text-emerald-800/90 mb-2 leading-relaxed">
-              教材・単語の登録データから「だいたいの量」を出し、月・日に分けた目安を作れます。
-            </p>
-            <div className="flex flex-wrap gap-1.5 mb-3 text-[10px] font-bold text-emerald-900/90">
-              <span className="px-2 py-0.5 rounded-md bg-white border border-emerald-200">① 種類</span>
-              <span className="text-emerald-600">→</span>
-              <span className="px-2 py-0.5 rounded-md bg-white border border-emerald-200">② 対象</span>
-              <span className="text-emerald-600">→</span>
-              <span className="px-2 py-0.5 rounded-md bg-white border border-emerald-200">③ ペース</span>
-              <span className="text-emerald-600">→</span>
-              <span className="px-2 py-0.5 rounded-md bg-white border border-emerald-200">④ 反映</span>
+          <div className="rounded-2xl p-4 shadow-sm border border-amber-300/70 bg-gradient-to-b from-amber-50/90 to-white space-y-3">
+            <div>
+              <p className="text-sm font-black text-gray-900">ゴールまでの期間と「何を」</p>
+              <p className="text-[11px] text-gray-600 mt-1 leading-snug">
+                月計画（その月の一歩）とは別です。全体の〆切とテーマだけ置きます。ページは選びません。
+              </p>
             </div>
-            <label className="block mb-3">
-              <span className="text-xs font-bold text-gray-700">反映先の月（月計画・プールと同じ）</span>
-              <input
-                type="month"
-                value={selectedMonth}
-                onChange={e => setSelectedMonth(e.target.value)}
-                className="w-full mt-1 p-3 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
-              />
-            </label>
-            <label className="block text-xs font-bold text-gray-700 mb-1">テンプレート</label>
+            <div className="flex flex-wrap items-end gap-2">
+              <label className="flex flex-col gap-0.5">
+                <span className="text-[10px] font-bold text-gray-600">いつまで</span>
+                <div className="flex gap-1.5 items-center">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    aria-label="期間の数値"
+                    value={bigHorizonValue}
+                    onChange={e => setBigHorizonValue(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    onBlur={() => {
+                      const n = parseInt(bigHorizonValue.trim(), 10)
+                      if (bigHorizonValue.trim() === '' || Number.isNaN(n) || n < 1) setBigHorizonValue('6')
+                      else setBigHorizonValue(String(Math.min(999, n)))
+                    }}
+                    className="w-16 p-2 rounded-lg border border-amber-200 bg-white font-black text-center text-sm tabular-nums"
+                  />
+                  <select
+                    value={bigHorizonUnit}
+                    onChange={e => setBigHorizonUnit(e.target.value as BigPlanHorizonUnit)}
+                    className="p-2 rounded-lg border border-amber-200 bg-white text-xs font-bold"
+                  >
+                    <option value="days">日</option>
+                    <option value="months">か月</option>
+                    <option value="years">年</option>
+                  </select>
+                </div>
+              </label>
+            </div>
+            {bigHorizonEnd && (
+              <p className="text-xs font-bold text-amber-900">
+                目安の終わり：{formatDateJa(dateToLocalIso(bigHorizonEnd))}
+              </p>
+            )}
+            {bigHorizonTimeProgressPct != null && (
+              <div>
+                <div className="flex justify-between text-[10px] font-bold text-gray-600 mb-0.5">
+                  <span>期間の進み（今日がどこまで来たか）</span>
+                  <span>{Math.round(bigHorizonTimeProgressPct)}%</span>
+                </div>
+                <div className="h-2.5 rounded-full bg-gray-200 overflow-hidden">
+                  <div
+                    className="h-full bg-amber-400 rounded-full transition-all min-w-[2px]"
+                    style={{ width: `${bigHorizonTimeProgressPct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+            <div>
+              <p className="text-[10px] font-bold text-gray-700 mb-1.5">その期間に何をやるか</p>
+              <div className="flex gap-1.5 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setBigFocusKind('material')}
+                  className={`flex-1 py-2 rounded-xl text-[11px] font-black border ${
+                    bigFocusKind === 'material'
+                      ? 'bg-amber-700 text-white border-amber-800'
+                      : 'bg-white text-gray-800 border-amber-200'
+                  }`}
+                >
+                  アプリの教材名
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBigFocusKind('free')}
+                  className={`flex-1 py-2 rounded-xl text-[11px] font-black border ${
+                    bigFocusKind === 'free'
+                      ? 'bg-amber-700 text-white border-amber-800'
+                      : 'bg-white text-gray-800 border-amber-200'
+                  }`}
+                >
+                  その他・自由
+                </button>
+              </div>
+              {bigFocusKind === 'material' ? (
+                <select
+                  value={bigFocusMaterial}
+                  onChange={e => setBigFocusMaterial(e.target.value)}
+                  className="w-full p-3 bg-white rounded-xl text-sm font-bold border border-amber-200 outline-none"
+                >
+                  <option value="">教材名を選ぶ（ページは不要）</option>
+                  {masterMaterials.map(m => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <textarea
+                  value={bigFocusFree}
+                  onChange={e => setBigFocusFree(e.target.value)}
+                  rows={3}
+                  placeholder="例：外の参考書、動画視聴、オンライン講座…"
+                  className="w-full bg-white text-gray-900 rounded-xl p-3 text-sm font-bold outline-none border border-amber-200 focus:ring-2 focus:ring-amber-300"
+                />
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const n = parseInt(bigHorizonValue.trim(), 10)
+                const v = Number.isNaN(n) || n < 1 ? 6 : n
+                const m = horizonToApproxMonths(bigHorizonUnit, v)
+                setMonthsInput(String(m))
+                showToast('下の「残り月数」に反映したよ')
+              }}
+              className="w-full py-2 rounded-xl bg-white border border-amber-300 text-amber-950 text-[11px] font-black"
+            >
+              この期間を「量の目安」の残り月数にコピー
+            </button>
+          </div>
+
+          <div className="rounded-2xl p-4 shadow-sm border border-emerald-200 bg-emerald-50/70 space-y-3">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-sm font-black text-emerald-900">量の目安</p>
+                <p className="text-[10px] text-gray-600 mt-0.5">
+                  アプリの登録データから「1日あたり」を計算。月計画の文章に反映する月。
+                </p>
+              </div>
+              <label className="flex flex-col items-end gap-0.5 min-w-[140px]">
+                <span className="text-[10px] font-bold text-gray-600">反映する月</span>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={e => setSelectedMonth(e.target.value)}
+                  className="w-full p-2 bg-white rounded-lg text-xs font-black border border-emerald-200 outline-none"
+                />
+              </label>
+            </div>
+            <label className="block text-xs font-bold text-gray-700 mb-1">何を「量」として数えるか</label>
+            <p className="text-[10px] text-gray-500 mb-1.5 leading-snug">
+              単語＝アプリの単語カードの件数。教材＝学習リソースに登録したページの枚数です。
+            </p>
             <select
               value={goalTemplateId}
               onChange={e => {
@@ -763,7 +962,7 @@ function PlanContent() {
             </select>
             {goalTemplateId === 'vocab_book' && (
               <label className="block mb-3">
-                <span className="text-xs font-bold text-gray-700">単語帳（書籍）</span>
+                <span className="text-xs font-bold text-gray-700">対象の書籍</span>
                 <select
                   value={goalBookId === '' ? '' : String(goalBookId)}
                   onChange={e => setGoalBookId(e.target.value === '' ? '' : Number(e.target.value))}
@@ -780,7 +979,7 @@ function PlanContent() {
             )}
             {goalTemplateId === 'textbook_pages' && (
               <label className="block mb-3">
-                <span className="text-xs font-bold text-gray-700">教材（学習リソース）</span>
+                <span className="text-xs font-bold text-gray-700">対象の教材</span>
                 <select
                   value={goalMaterial}
                   onChange={e => setGoalMaterial(e.target.value)}
@@ -795,106 +994,157 @@ function PlanContent() {
                 </select>
               </label>
             )}
-            <div className="grid grid-cols-2 gap-2 mb-3">
+            <div className="grid grid-cols-2 gap-2">
               <label className="block text-xs">
-                <span className="font-bold text-gray-700">残り月数</span>
+                <span className="font-bold text-gray-700">残り何か月で割るか</span>
+                <span className="block text-[9px] text-gray-500 font-normal mt-0.5 leading-tight">
+                  上の「ゴールまでの期間」と別でもOK。目安の計算用です。
+                </span>
                 <input
-                  type="number"
-                  min={1}
-                  max={36}
-                  value={monthsRemaining}
-                  onChange={e => setMonthsRemaining(Math.max(1, Number(e.target.value) || 1))}
-                  className="w-full mt-1 p-2 rounded-lg border border-emerald-200 bg-white font-bold text-sm"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-label="残り月数"
+                  value={monthsInput}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
+                    setMonthsInput(raw)
+                  }}
+                  onBlur={() => {
+                    const v = monthsInput.trim()
+                    if (v === '') {
+                      setMonthsInput('6')
+                      return
+                    }
+                    const n = Math.max(1, Math.min(36, parseInt(v, 10) || 1))
+                    setMonthsInput(String(n))
+                  }}
+                  className="w-full mt-1 p-2.5 rounded-lg border border-emerald-200 bg-white font-black text-base text-center tabular-nums"
                 />
               </label>
               <label className="block text-xs">
-                <span className="font-bold text-gray-700">週の学習日</span>
+                <span className="font-bold text-gray-700">1週間に勉強する日数（1〜7）</span>
+                <span className="block text-[9px] text-gray-500 font-normal mt-0.5 leading-tight">
+                  週に「タスクを何回」ではなく、1週間のうち何日学習するか。目安を1日あたりに分けるときに使います。
+                </span>
                 <input
-                  type="number"
-                  min={1}
-                  max={7}
-                  value={studyDaysPerWeek}
-                  onChange={e => setStudyDaysPerWeek(Math.min(7, Math.max(1, Number(e.target.value) || 1)))}
-                  className="w-full mt-1 p-2 rounded-lg border border-emerald-200 bg-white font-bold text-sm"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-label="週の学習日数"
+                  value={weeksInput}
+                  onChange={e => {
+                    const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
+                    setWeeksInput(raw)
+                  }}
+                  onBlur={() => {
+                    const v = weeksInput.trim()
+                    if (v === '') {
+                      setWeeksInput('5')
+                      return
+                    }
+                    const n = Math.max(1, Math.min(7, parseInt(v, 10) || 1))
+                    setWeeksInput(String(n))
+                  }}
+                  className="w-full mt-1 p-2.5 rounded-lg border border-emerald-200 bg-white font-black text-base text-center tabular-nums"
                 />
               </label>
             </div>
-            <p className="text-xs font-bold text-gray-700 mb-1">ペース</p>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {(Object.keys(PACE_LABELS) as PaceLevel[]).map(k => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setPaceLevel(k)}
-                  className={`px-3 py-2 rounded-xl text-xs font-black border ${
-                    paceLevel === k
-                      ? 'bg-emerald-600 text-white border-emerald-700'
-                      : 'bg-white text-gray-800 border-emerald-200'
-                  }`}
-                >
-                  {PACE_LABELS[k].label}
-                  <span className="block text-[10px] font-bold opacity-90">{PACE_LABELS[k].desc}</span>
-                </button>
-              ))}
+            <div>
+              <p className="text-xs font-bold text-gray-700 mb-1.5">1日の量（気持ち）</p>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(Object.keys(PACE_LABELS) as PaceLevel[]).map(k => (
+                  <button
+                    key={k}
+                    type="button"
+                    title={PACE_LABELS[k].desc}
+                    onClick={() => setPaceLevel(k)}
+                    className={`py-2.5 px-1 rounded-xl text-xs font-black border min-h-[48px] flex flex-col items-center justify-center ${
+                      paceLevel === k
+                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
+                        : 'bg-white text-gray-800 border-emerald-200'
+                    }`}
+                  >
+                    <span>{PACE_LABELS[k].label}</span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="rounded-xl bg-white/90 border border-emerald-100 p-3 text-xs space-y-2">
+            <div className="rounded-2xl bg-white border border-emerald-200/80 p-4 shadow-sm">
               {loadingCounts ? (
-                <p className="text-gray-600 font-bold">集計中…</p>
+                <p className="text-gray-600 font-bold text-center text-sm">集計中…</p>
               ) : countLines.length === 0 ? (
-                <p className="text-gray-600">条件に合うデータがありません。</p>
+                <p className="text-gray-600 text-sm text-center">データがありません</p>
               ) : totalUnits === 0 && goalTemplateId === 'vocab_book' && goalBookId === '' ? (
-                <p className="text-amber-800 font-bold">上で書籍を選ぶと、語数が表示されます。</p>
+                <p className="text-amber-800 font-bold text-sm text-center">書籍を選ぶと表示されます</p>
               ) : (
-                countLines.map((line, i) => (
-                  <p key={i} className="font-bold text-gray-800">
-                    {line.label}：{line.units}
-                    {line.unitLabel}
-                  </p>
-                ))
+                <>
+                  <div className="text-xs space-y-1 mb-3 text-gray-800 font-bold">
+                    {countLines.map((line, i) => (
+                      <p key={i}>
+                        {line.label}：{line.units}
+                        {line.unitLabel}
+                      </p>
+                    ))}
+                  </div>
+                  {goalTemplateId === 'textbook_pages' && goalMaterial.trim() && (
+                    <p className="text-[10px] text-gray-500 leading-snug mb-3 -mt-1">
+                      ※「◯ページ」は、管理画面で
+                      <strong className="text-gray-700">教科書の総ページ数</strong>
+                      を入れているときはその数です。未設定のときだけ、学習リソースに登録したページの種類数になります。
+                    </p>
+                  )}
+                  {pacingPreview && totalUnits > 0 ? (
+                    <div className="text-center pt-2 border-t border-emerald-100">
+                      <p className="text-3xl font-black text-emerald-800 tabular-nums leading-tight">
+                        約 {Math.max(1, Math.ceil(pacingPreview.dailyUnits))}
+                        <span className="text-lg font-black text-emerald-700"> / 日</span>
+                      </p>
+                      <p className="text-[11px] text-gray-600 mt-2 font-bold">
+                        月あたり 約{Math.max(1, Math.ceil(pacingPreview.monthlyUnits))}（週{pacingPreview.studyDaysPerWeek}日想定）
+                      </p>
+                      <p className="text-[10px] text-emerald-700/90 font-bold mt-1">{PACE_LABELS[paceLevel].label}</p>
+                    </div>
+                  ) : null}
+                  {totalUnits === 0 &&
+                    !loadingCounts &&
+                    !(goalTemplateId === 'vocab_book' && goalBookId === '') &&
+                    !(goalTemplateId === 'textbook_pages' && !goalMaterial.trim()) && (
+                      <p className="text-amber-800 font-bold text-sm text-center mt-2">量が0のため目安を出せません</p>
+                    )}
+                </>
               )}
-              {pacingPreview && totalUnits > 0 && (
-                <p className="text-emerald-900 font-black pt-1 border-t border-emerald-100">
-                  目安：約{Math.max(1, Math.ceil(pacingPreview.dailyUnits))} / 日（合計{totalUnits}・{PACE_LABELS[paceLevel].label}）
-                  <span className="block text-[11px] font-bold text-gray-600 mt-1">
-                    月あたり約{Math.max(1, Math.ceil(pacingPreview.monthlyUnits))}（週{pacingPreview.studyDaysPerWeek}日×4週の想定）
-                  </span>
-                </p>
-              )}
-              {totalUnits === 0 &&
-                !loadingCounts &&
-                !(goalTemplateId === 'vocab_book' && goalBookId === '') &&
-                !(goalTemplateId === 'textbook_pages' && !goalMaterial.trim()) && (
-                  <p className="text-amber-800 font-bold">単語・ページが0のときは目安を出せません。</p>
-                )}
             </div>
-            <div className="mt-3 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={applyPacingToSelectedMonth}
+              className="w-full py-3.5 rounded-xl bg-emerald-600 text-white text-sm font-black shadow"
+            >
+              この目安を月計画に反映（{selectedMonth.split('-')[0]}年{Number(selectedMonth.split('-')[1])}月）
+            </button>
+            <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={applyTemplateToBigPlan}
-                className="w-full py-2.5 rounded-xl bg-white border-2 border-emerald-400 text-emerald-900 text-xs font-black"
+                className="py-2.5 rounded-xl bg-white border-2 border-emerald-400 text-emerald-900 text-[11px] font-black leading-tight"
               >
-                上の文例＋目安を大目標に反映
-              </button>
-              <button
-                type="button"
-                onClick={applyPacingToSelectedMonth}
-                className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black shadow"
-              >
-                月計画（{selectedMonth}）に反映 →
+                大目標に文例を入れる
               </button>
               <button
                 type="button"
                 onClick={addPacingDraftToPool}
-                className="w-full py-2.5 rounded-xl bg-white border border-emerald-300 text-emerald-900 text-xs font-black"
+                className="py-2.5 rounded-xl bg-white border border-emerald-300 text-emerald-900 text-[11px] font-black leading-tight"
               >
-                日々の予定用・プールに目安タスクを1件追加 →
+                プールに1件追加
               </button>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-1">
               <button
                 type="button"
                 onClick={addWeeklyPacingToPool}
-                className="w-full py-2 rounded-xl bg-emerald-100/80 border border-emerald-200 text-emerald-950 text-[11px] font-black"
+                className="text-[11px] font-bold text-emerald-900 underline underline-offset-2"
               >
-                プールに週別4件（第1〜4週）を追加 →
+                週1〜4をまとめてプールへ
               </button>
               <button
                 type="button"
@@ -902,19 +1152,12 @@ function PlanContent() {
                   await persistGoalPacing()
                   showToast('ペース設定を保存したよ')
                 }}
-                className="w-full py-2 text-[11px] font-bold text-emerald-800 underline"
+                className="text-[11px] font-bold text-emerald-800 underline underline-offset-2"
               >
-                数字だけ保存（テンプレ・ペース）
+                この設定だけ保存
               </button>
             </div>
-            <p className="text-[10px] text-gray-500 mt-2 leading-snug">
-              上の「反映先の月」が、月計画のテキスト・プールのタスクに使われます。「月計画」タブの前月／翌月とも連動します。
-            </p>
           </div>
-
-          <p className="text-xs text-gray-500 bg-gray-50 rounded-xl p-3 border border-gray-100">
-            💡 大目標がはっきりすると、月・日のタスクの意味がつかみやすくなります。
-          </p>
         </div>
       )}
 

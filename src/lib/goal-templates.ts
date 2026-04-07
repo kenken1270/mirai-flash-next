@@ -26,26 +26,31 @@ export type GoalTemplate = {
 export const GOAL_TEMPLATES: GoalTemplate[] = [
   {
     id: 'vocab_all',
-    title: '単語・語彙（全書籍）',
+    title: '単語カード（アプリの全語を数える）',
     description: '登録されている単語カードの総数を目安に、日・月の量を出します。',
     bigPlanExample: '教材の単語を確実に覚え、テスト・作文で使えるようにする。',
     requirements: [{ kind: 'flashcard_books', bookIds: null, label: '単語カード（全書籍）' }],
   },
   {
     id: 'vocab_book',
-    title: '単語・語彙（指定の1冊）',
+    title: '単語カード（アプリの1冊だけ）',
     description: '単語帳の1冊だけを対象に、量の目安を出します。',
     bigPlanExample: 'この一冊の単語を期間内にマスターする。',
     requirements: [],
   },
   {
     id: 'textbook_pages',
-    title: '教材ページ（学習リソース）',
+    title: '教材のページ数（アプリに登録したページ）',
     description: '指定した教材のページ数を「量」として、月・日に分けます。',
     bigPlanExample: '教科書の範囲を学期内に終える。',
     requirements: [],
   },
 ]
+
+export type BigPlanHorizonUnit = 'days' | 'months' | 'years'
+
+/** 大目標ブロック用：ゴールまでの期間（月計画の「対象月」とは別） */
+export type BigPlanHorizon = { unit: BigPlanHorizonUnit; value: number }
 
 export type GoalPacingPayload = {
   templateId: string
@@ -57,6 +62,12 @@ export type GoalPacingPayload = {
   monthsRemaining: number
   studyDaysPerWeek: number
   updatedAt: string
+  /** 大目標：いつまでに何を（全体の〆切イメージ） */
+  bigPlanHorizon?: BigPlanHorizon
+  /** material: 登録教材からざっくり / free: 動画・外の教材など自由記述 */
+  bigPlanFocusKind?: 'material' | 'free'
+  bigPlanFocusMaterial?: string
+  bigPlanFocusFree?: string
 }
 
 export type FetchTemplateOptions = {
@@ -103,11 +114,17 @@ async function countLearningPages(client: SupabaseClient, materialName: string):
   if (!materialName.trim()) return 0
   const { data, error } = await client
     .from('learning_resources')
-    .select('page_no')
+    .select('page_no, resource_type, material_total_pages')
     .eq('material_name', materialName)
-    .eq('resource_type', 'page')
-  if (error || !data) return 0
-  const pages = new Set(data.map(d => d.page_no).filter(Boolean))
+  if (error || !data?.length) return 0
+
+  const fromMeta = data
+    .map(d => d.material_total_pages)
+    .filter((n): n is number => typeof n === 'number' && n > 0)
+  if (fromMeta.length > 0) return Math.max(...fromMeta)
+
+  const pageRows = data.filter(d => d.resource_type === 'page')
+  const pages = new Set(pageRows.map(d => d.page_no).filter(Boolean))
   return pages.size
 }
 
