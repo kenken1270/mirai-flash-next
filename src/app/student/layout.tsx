@@ -10,7 +10,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
   const menuItems = [
     { name: '🔥 ホーム / 今日', path: '/student', icon: '🏠' },
-    { name: '📅 未来の見通し', path: '/student/plan', icon: '🗺️' },
+    { name: '📅 未来の計画', path: '/student/plan', icon: '🗺️' },
     { name: '🃏 単語学習', path: '/flash', icon: '📚' },
     { name: '📝 小テスト', path: '/student/test', icon: '✏️' },
     { name: '🎰 ガチャ', path: '/student/gacha', icon: '🎁' },

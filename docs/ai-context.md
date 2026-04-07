@@ -48,6 +48,12 @@
 - Supabase Auth の `user.email` から **`@` より前のローカル部** を `users.username` / `plans.username` / `review_logs.username` 等のキーとして使う。
 - 実装は **`src/lib/auth-user.ts`** の `usernameFromEmail` / `getUsernameFromSession` に集約。画面ごとに `split` / `replace` しない。
 
+### 未来の計画（`/student/plan`）
+
+- **タブ:** 大計画（`plans.big_plan` 全行一括更新）／中計画（`task_type: month_summary` + `month_plan: YYYY-MM` で1行／月）／小計画（Quest Pool + 週カレンダー）。
+- **小タスク:** `month_plan` に **YYYY-MM** を保存。プール追加モーダルで `type="month"` 入力。
+- **移動:** 日タスクの「明日へ」「プールへ」で `task_date` を更新。
+
 ### 学習タスクの画面（統一）
 
 - **メイン:** `/student/study?taskId=…` — `learning_resources` による解説・動画・多言語ヒント＋タイマー。開始時 `users.current_status: doing`、完了後 `waiting_check` → `/student/check`。
