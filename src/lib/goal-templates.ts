@@ -72,6 +72,8 @@ export type GoalPacingPayload = {
   bigPlanFocusMaterials?: string[]
   /** 未登録の教材・過去問などを自由記述（教材と同時可） */
   bigPlanFocusFree?: string
+  /** 教材名 → 月(YYYY-MM) → その月の終わりまでに到達するページ（累積） */
+  monthPageTargets?: Record<string, Record<string, number>>
 }
 
 export type FetchTemplateOptions = {
@@ -114,7 +116,8 @@ async function countFlashcardsForBooks(client: SupabaseClient, bookIds: number[]
   return countFlashcardsInSetIds(client, ids)
 }
 
-async function countLearningPages(client: SupabaseClient, materialName: string): Promise<number> {
+/** 教材のページ数（総ページ数メタがあれば優先、なければ登録ページの種類数） */
+export async function countLearningPages(client: SupabaseClient, materialName: string): Promise<number> {
   if (!materialName.trim()) return 0
   const { data, error } = await client
     .from('learning_resources')

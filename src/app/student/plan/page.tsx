@@ -16,13 +16,12 @@ import {
   type PlanRow,
 } from '@/lib/student'
 import {
-  GOAL_TEMPLATES,
   PACE_LABELS,
   type PaceLevel,
   type BigPlanHorizonUnit,
   fetchTemplateCounts,
   computePacing,
-  buildMonthSummaryDraft,
+  countLearningPages,
   type CountLine,
 } from '@/lib/goal-templates'
 import { withTimeout } from '@/lib/with-timeout'
@@ -78,20 +77,7 @@ function addHorizonFromToday(unit: BigPlanHorizonUnit, value: number): Date {
   return d
 }
 
-function horizonToApproxMonths(unit: BigPlanHorizonUnit, value: number): number {
-  if (unit === 'days') return Math.max(1, Math.min(36, Math.round(value / 30)))
-  if (unit === 'months') return Math.max(1, Math.min(36, value))
-  return Math.max(1, Math.min(36, value * 12))
-}
-
 type TabId = 'big' | 'month' | 'daily'
-
-/** 量の目安：種類ボタン用の短いラベル */
-const PACING_TEMPLATE_CHIP: Record<string, string> = {
-  vocab_all: '単語・全冊',
-  vocab_book: '単語・1冊',
-  textbook_pages: '教材ページ',
-}
 
 function PlanContent() {
   const router = useRouter()
@@ -137,9 +123,11 @@ function PlanContent() {
   /** 大目標：アプリ登録教材（複数）＋自由文（同時可） */
   const [bigFocusMaterials, setBigFocusMaterials] = useState<string[]>([])
   const [bigFocusFree, setBigFocusFree] = useState('')
+  /** 教材名 → YYYY-MM → その月の終わりまでに到達するページ（累積） */
+  const [monthPageTargets, setMonthPageTargets] = useState<Record<string, Record<string, number>>>({})
+  const [materialPageTotals, setMaterialPageTotals] = useState<Record<string, number>>({})
   const [countLines, setCountLines] = useState<CountLine[]>([])
   const [totalUnits, setTotalUnits] = useState(0)
-  const [loadingCounts, setLoadingCounts] = useState(false)
   const [initError, setInitError] = useState<string | null>(null)
 
   /** 空欄・途中入力時はプレビュー用に既定値を使う（保存・反映は blur 後の文字列を基準にする） */
@@ -276,14 +264,32 @@ function PlanContent() {
         setBigFocusMaterials([])
       }
       if (saved.bigPlanFocusFree != null) setBigFocusFree(saved.bigPlanFocusFree)
+      if (saved.monthPageTargets && typeof saved.monthPageTargets === 'object') {
+        setMonthPageTargets(saved.monthPageTargets)
+      }
     })()
   }, [username])
+
+  useEffect(() => {
+    if (tab !== 'month' || !username) return
+    let cancelled = false
+    ;(async () => {
+      const totals: Record<string, number> = {}
+      for (const name of bigFocusMaterials) {
+        const n = await countLearningPages(supabase, name)
+        if (!cancelled) totals[name] = n
+      }
+      if (!cancelled) setMaterialPageTotals(totals)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [tab, username, bigFocusMaterials])
 
   useEffect(() => {
     if (!username) return
     let cancelled = false
     ;(async () => {
-      setLoadingCounts(true)
       try {
         const mat = goalTemplateId === 'textbook_pages' ? goalMaterial : ''
         const bookOpt =
@@ -305,8 +311,6 @@ function PlanContent() {
           setCountLines([])
           setTotalUnits(0)
         }
-      } finally {
-        if (!cancelled) setLoadingCounts(false)
       }
     })()
     return () => {
@@ -369,31 +373,6 @@ function PlanContent() {
     () => plans.filter(p => planRowBelongsToMonth(p, selectedMonth) && p.is_done === 0),
     [plans, selectedMonth]
   )
-
-  const monthDoneCount = useMemo(
-    () => plans.filter(p => planRowBelongsToMonth(p, selectedMonth) && p.is_done === 1).length,
-    [plans, selectedMonth]
-  )
-
-  const monthPoolCount = useMemo(
-    () =>
-      plans.filter(
-        p =>
-          !p.task_date &&
-          p.is_done === 0 &&
-          p.task_type !== MONTH_SUMMARY &&
-          p.month_plan === selectedMonth
-      ).length,
-    [plans, selectedMonth]
-  )
-
-  const monthTaskProgressPct = useMemo(() => {
-    const done = monthDoneCount
-    const undone = monthTasks.length
-    const total = done + undone
-    if (total <= 0) return null
-    return Math.min(100, Math.round((done / total) * 100))
-  }, [monthDoneCount, monthTasks.length])
 
   /** カレンダーで選んだ日がある月の「月のめあて」（つながり表示用） */
   const monthGoalLineForSelectedDate = useMemo(() => {
@@ -552,159 +531,9 @@ function PlanContent() {
       bigPlanHorizon: horizonPayload,
       bigPlanFocusMaterials: bigFocusMaterials.length > 0 ? bigFocusMaterials : undefined,
       bigPlanFocusFree: bigFocusFree.trim() ? bigFocusFree : undefined,
+      monthPageTargets:
+        Object.keys(monthPageTargets).length > 0 ? monthPageTargets : undefined,
     })
-  }
-
-  async function addPacingDraftToPool() {
-    if (!username) return
-    if (totalUnits <= 0) {
-      showToast('量が0のため追加できません')
-      return
-    }
-    const p = computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
-    const daily = Math.max(1, Math.ceil(p.dailyUnits))
-    const paceName = PACE_LABELS[paceLevel].label
-    let mid = ''
-    let taskName = ''
-    if (goalTemplateId === 'textbook_pages') {
-      if (!goalMaterial.trim()) {
-        showToast('教材を選んでください')
-        return
-      }
-      mid = goalMaterial
-      taskName = `【目安・${paceName}】約${daily}ページ/日（${selectedMonth}）`
-    } else if (goalTemplateId === 'vocab_book') {
-      if (goalBookId === '') {
-        showToast('書籍を選んでください')
-        return
-      }
-      const book = flashcardBooks.find(b => b.id === Number(goalBookId))
-      mid = book?.title ?? '単語'
-      taskName = `【目安・${paceName}】約${daily}語/日（${book?.title ?? ''}）`
-    } else if (goalTemplateId === 'vocab_all') {
-      mid = '単語（全書籍）'
-      taskName = `【目安・${paceName}】約${daily}語/日（全${totalUnits}語）`
-    } else {
-      showToast('テンプレートを選んでください')
-      return
-    }
-    await insertPlan({
-      username,
-      big_plan: bigGoal,
-      mid_plan: mid,
-      task_name: taskName,
-      task_date: '',
-      is_done: 0,
-      video_url: '',
-      task_type: 'lesson',
-      planned_minutes: 30,
-      material_id: '',
-      page_range: '',
-      deadline: '',
-      month_plan: selectedMonth,
-    })
-    await refreshPlans()
-    await persistGoalPacing()
-    showToast('プールに目安タスクを追加したよ')
-    goTab('daily')
-  }
-
-  async function applyTemplateToBigPlan() {
-    const tmpl = GOAL_TEMPLATES.find(t => t.id === goalTemplateId)
-    const p = pacingPreview
-    const extra =
-      p && totalUnits > 0
-        ? `【量の目安・${PACE_LABELS[paceLevel].label}】約${Math.max(1, Math.ceil(p.dailyUnits))}単位/日（全${totalUnits}・残り${pacingMonths}か月・週${pacingWeeks}日想定）`
-        : '【量の目安】教材・単語データを登録すると、日の目安が出ます。'
-    const next = [tmpl?.bigPlanExample ?? '', extra].filter(Boolean).join('\n\n')
-    setBigPlanDraft(next)
-    await persistGoalPacing()
-    showToast('大目標欄に反映したよ（編集してOK）')
-  }
-
-  async function applyPacingToSelectedMonth() {
-    if (!username) return
-    const tmpl = GOAL_TEMPLATES.find(t => t.id === goalTemplateId)
-    const p = computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
-    const draft = buildMonthSummaryDraft(tmpl?.title ?? '計画', countLines, p)
-    setMonthGoalDraft(draft)
-    const existing = plans.find(x => x.task_type === MONTH_SUMMARY && x.month_plan === selectedMonth)
-    if (existing) {
-      await updatePlan(existing.id, { task_name: draft })
-    } else {
-      await insertPlan({
-        username,
-        big_plan: bigGoal,
-        mid_plan: '',
-        task_name: draft,
-        task_date: '',
-        is_done: 0,
-        video_url: '',
-        task_type: MONTH_SUMMARY,
-        planned_minutes: 0,
-        material_id: '',
-        page_range: '',
-        deadline: '',
-        month_plan: selectedMonth,
-      })
-    }
-    await refreshPlans()
-    await persistGoalPacing()
-    showToast(`「月計画」の${selectedMonth}に反映したよ`)
-    if (tab !== 'month') goTab('month')
-  }
-
-  async function addWeeklyPacingToPool() {
-    if (!username) return
-    if (totalUnits <= 0) {
-      showToast('量が0のため追加できません')
-      return
-    }
-    const p = computePacing(totalUnits, pacingMonths, pacingWeeks, paceLevel)
-    const daily = Math.max(1, Math.ceil(p.dailyUnits))
-    const paceName = PACE_LABELS[paceLevel].label
-    const unit = goalTemplateId === 'textbook_pages' ? 'ページ' : '語'
-    let mid = ''
-    if (goalTemplateId === 'textbook_pages') {
-      if (!goalMaterial.trim()) {
-        showToast('教材を選んでください')
-        return
-      }
-      mid = goalMaterial
-    } else if (goalTemplateId === 'vocab_book') {
-      if (goalBookId === '') {
-        showToast('書籍を選んでください')
-        return
-      }
-      const book = flashcardBooks.find(b => b.id === Number(goalBookId))
-      mid = book?.title ?? '単語'
-    } else if (goalTemplateId === 'vocab_all') {
-      mid = '単語（全書籍）'
-    } else {
-      showToast('テンプレートを選んでください')
-      return
-    }
-    for (let w = 1; w <= 4; w++) {
-      await insertPlan({
-        username,
-        big_plan: bigGoal,
-        mid_plan: mid,
-        task_name: `【第${w}週】${paceName} 約${daily}${unit}/日（${selectedMonth}）`,
-        task_date: '',
-        is_done: 0,
-        video_url: '',
-        task_type: 'lesson',
-        planned_minutes: 30,
-        material_id: '',
-        page_range: '',
-        deadline: '',
-        month_plan: selectedMonth,
-      })
-    }
-    await refreshPlans()
-    await persistGoalPacing()
-    showToast('第1〜4週をプールに追加したよ')
-    goTab('daily')
   }
 
   if (loading) {
@@ -761,9 +590,7 @@ function PlanContent() {
 
       <div className="px-4 pt-4 pb-3 bg-white border-b border-gray-200 shadow-sm">
         <h1 className="text-base font-black text-gray-900">未来の計画</h1>
-        <p className="text-xs text-gray-500 mt-1 leading-snug">
-          大目標 → 月計画 → 日々の予定の順で整理すると分かりやすいです
-        </p>
+        <p className="text-xs text-gray-500 mt-1 leading-snug">大目標 → 月計画 → 日々の予定</p>
       </div>
 
       {/* タブ（短い日本語＋補足） */}
@@ -791,9 +618,7 @@ function PlanContent() {
       {/* ── 大目標 ── */}
       {tab === 'big' && (
         <div className="flex-1 px-3 py-4 space-y-4 bg-white min-h-[50vh]">
-          <p className="text-sm text-gray-600 leading-relaxed">
-            勉強のゴールや、卒業後の姿を書きます。あとから変更できます。
-          </p>
+          <p className="text-sm text-gray-600">ゴールと、使う教材の洗い出しだけです。</p>
           <div className="rounded-2xl p-4 shadow-sm border border-gray-200 bg-amber-50/80">
             <p className="text-sm font-black text-gray-800 mb-2">大目標（メインクエスト）</p>
             <textarea
@@ -814,12 +639,7 @@ function PlanContent() {
           </div>
 
           <div className="rounded-2xl p-4 shadow-sm border border-amber-300/70 bg-gradient-to-b from-amber-50/90 to-white space-y-3">
-            <div>
-              <p className="text-sm font-black text-gray-900">ゴールまでの期間と「何を」</p>
-              <p className="text-[11px] text-gray-600 mt-1 leading-snug">
-                月計画（その月の一歩）とは別です。全体の〆切とテーマだけ置きます。ページは選びません。
-              </p>
-            </div>
+            <p className="text-sm font-black text-gray-900">ゴールまでの期間と「何を」</p>
             <div className="flex flex-wrap items-end gap-2">
               <label className="flex flex-col gap-0.5">
                 <span className="text-[10px] font-bold text-gray-600">いつまで</span>
@@ -924,256 +744,6 @@ function PlanContent() {
                 />
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                const n = parseInt(bigHorizonValue.trim(), 10)
-                const v = Number.isNaN(n) || n < 1 ? 6 : n
-                const m = horizonToApproxMonths(bigHorizonUnit, v)
-                setMonthsInput(String(m))
-                showToast('下の「残り月数」に反映したよ')
-              }}
-              className="w-full py-2 rounded-xl bg-white border border-amber-300 text-amber-950 text-[11px] font-black"
-            >
-              この期間を「量の目安」の残り月数にコピー
-            </button>
-          </div>
-
-          <div className="rounded-2xl p-4 shadow-sm border border-emerald-200 bg-emerald-50/70 space-y-3">
-            <div className="flex flex-wrap items-end justify-between gap-2">
-              <p className="text-sm font-black text-emerald-900">1日の目安</p>
-              <label className="flex flex-col items-end gap-0.5 min-w-[140px]">
-                <span className="text-[10px] font-bold text-gray-600">月計画に反映</span>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={e => setSelectedMonth(e.target.value)}
-                  className="w-full p-2 bg-white rounded-lg text-xs font-black border border-emerald-200 outline-none"
-                />
-              </label>
-            </div>
-            <p className="text-[10px] text-gray-600">アプリのデータを「1日あたり」に割ります。</p>
-            <div>
-              <p className="text-[10px] font-bold text-gray-700 mb-1.5">何を数えるか</p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {GOAL_TEMPLATES.map(t => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    title={t.title}
-                    onClick={() => {
-                      setGoalTemplateId(t.id)
-                      if (t.id !== 'vocab_book') setGoalBookId('')
-                      if (t.id !== 'textbook_pages') setGoalMaterial('')
-                    }}
-                    className={`py-2 px-1 rounded-xl text-[11px] font-black border ${
-                      goalTemplateId === t.id
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
-                        : 'bg-white text-gray-800 border-emerald-200'
-                    }`}
-                  >
-                    {PACING_TEMPLATE_CHIP[t.id] ?? t.title}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {goalTemplateId === 'vocab_book' && (
-              <label className="block">
-                <span className="text-[10px] font-bold text-gray-700">その書籍</span>
-                <select
-                  value={goalBookId === '' ? '' : String(goalBookId)}
-                  onChange={e => setGoalBookId(e.target.value === '' ? '' : Number(e.target.value))}
-                  className="w-full mt-1 p-2.5 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
-                >
-                  <option value="">選ぶ</option>
-                  {flashcardBooks.map(b => (
-                    <option key={b.id} value={b.id}>
-                      {b.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {goalTemplateId === 'textbook_pages' && (
-              <label className="block">
-                <span className="text-[10px] font-bold text-gray-700">その教材</span>
-                <select
-                  value={goalMaterial}
-                  onChange={e => setGoalMaterial(e.target.value)}
-                  className="w-full mt-1 p-2.5 bg-white rounded-xl text-sm font-bold border border-emerald-200 outline-none"
-                >
-                  <option value="">選ぶ</option>
-                  {masterMaterials.map(m => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <div className="grid grid-cols-2 gap-2">
-              <label className="block text-xs" title="ゴールまでの期間と別でもOK。目安の割り算に使います。">
-                <span className="font-bold text-gray-700">残り（か月）</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  aria-label="残り月数"
-                  value={monthsInput}
-                  onChange={e => {
-                    const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
-                    setMonthsInput(raw)
-                  }}
-                  onBlur={() => {
-                    const v = monthsInput.trim()
-                    if (v === '') {
-                      setMonthsInput('6')
-                      return
-                    }
-                    const n = Math.max(1, Math.min(36, parseInt(v, 10) || 1))
-                    setMonthsInput(String(n))
-                  }}
-                  className="w-full mt-1 p-2.5 rounded-lg border border-emerald-200 bg-white font-black text-base text-center tabular-nums"
-                />
-              </label>
-              <label
-                className="block text-xs"
-                title="1週間のうち何日学習するか（1〜7）。目安を1日あたりに分ける分母です。"
-              >
-                <span className="font-bold text-gray-700">週の日数</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="off"
-                  aria-label="週の学習日数"
-                  value={weeksInput}
-                  onChange={e => {
-                    const raw = e.target.value.replace(/\D/g, '').slice(0, 2)
-                    setWeeksInput(raw)
-                  }}
-                  onBlur={() => {
-                    const v = weeksInput.trim()
-                    if (v === '') {
-                      setWeeksInput('5')
-                      return
-                    }
-                    const n = Math.max(1, Math.min(7, parseInt(v, 10) || 1))
-                    setWeeksInput(String(n))
-                  }}
-                  className="w-full mt-1 p-2.5 rounded-lg border border-emerald-200 bg-white font-black text-base text-center tabular-nums"
-                />
-              </label>
-            </div>
-            <div>
-              <p className="text-[10px] font-bold text-gray-700 mb-1.5">きつさ</p>
-              <div className="grid grid-cols-3 gap-1.5">
-                {(Object.keys(PACE_LABELS) as PaceLevel[]).map(k => (
-                  <button
-                    key={k}
-                    type="button"
-                    title={PACE_LABELS[k].desc}
-                    onClick={() => setPaceLevel(k)}
-                    className={`py-2.5 px-1 rounded-xl text-xs font-black border min-h-[44px] flex flex-col items-center justify-center ${
-                      paceLevel === k
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-sm'
-                        : 'bg-white text-gray-800 border-emerald-200'
-                    }`}
-                  >
-                    <span>{PACE_LABELS[k].label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-white border border-emerald-200/80 p-4 shadow-sm">
-              {loadingCounts ? (
-                <p className="text-gray-600 font-bold text-center text-sm">集計中…</p>
-              ) : countLines.length === 0 ? (
-                <p className="text-gray-600 text-sm text-center">データがありません</p>
-              ) : totalUnits === 0 && goalTemplateId === 'vocab_book' && goalBookId === '' ? (
-                <p className="text-amber-800 font-bold text-sm text-center">書籍を選ぶと表示されます</p>
-              ) : (
-                <>
-                  <div className="text-xs space-y-1 mb-3 text-gray-800 font-bold">
-                    {countLines.map((line, i) => (
-                      <p key={i}>
-                        {line.label}：{line.units}
-                        {line.unitLabel}
-                      </p>
-                    ))}
-                  </div>
-                  {goalTemplateId === 'textbook_pages' && goalMaterial.trim() && (
-                    <details className="text-[10px] text-gray-500 mb-2 -mt-0.5">
-                      <summary className="cursor-pointer font-bold text-gray-600 list-none [&::-webkit-details-marker]:hidden">
-                        ページ数の数え方
-                      </summary>
-                      <p className="mt-1 pl-0.5 leading-snug">
-                        管理画面の「総ページ数」があればそれを使います。未設定のときは登録済みページの種類数です。
-                      </p>
-                    </details>
-                  )}
-                  {pacingPreview && totalUnits > 0 ? (
-                    <div className="text-center pt-2 border-t border-emerald-100">
-                      <p className="text-3xl font-black text-emerald-800 tabular-nums leading-tight">
-                        約 {Math.max(1, Math.ceil(pacingPreview.dailyUnits))}
-                        <span className="text-lg font-black text-emerald-700"> / 日</span>
-                      </p>
-                      <p className="text-[11px] text-gray-600 mt-2 font-bold">
-                        月あたり 約{Math.max(1, Math.ceil(pacingPreview.monthlyUnits))}（週{pacingPreview.studyDaysPerWeek}日想定）
-                      </p>
-                      <p className="text-[10px] text-emerald-700/90 font-bold mt-1">{PACE_LABELS[paceLevel].label}</p>
-                    </div>
-                  ) : null}
-                  {totalUnits === 0 &&
-                    !loadingCounts &&
-                    !(goalTemplateId === 'vocab_book' && goalBookId === '') &&
-                    !(goalTemplateId === 'textbook_pages' && !goalMaterial.trim()) && (
-                      <p className="text-amber-800 font-bold text-sm text-center mt-2">量が0のため目安を出せません</p>
-                    )}
-                </>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={applyPacingToSelectedMonth}
-              className="w-full py-3.5 rounded-xl bg-emerald-600 text-white text-sm font-black shadow"
-            >
-              この目安を月計画に反映（{selectedMonth.split('-')[0]}年{Number(selectedMonth.split('-')[1])}月）
-            </button>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={applyTemplateToBigPlan}
-                className="py-2.5 rounded-xl bg-white border-2 border-emerald-400 text-emerald-900 text-[11px] font-black leading-tight"
-              >
-                大目標に文例を入れる
-              </button>
-              <button
-                type="button"
-                onClick={addPacingDraftToPool}
-                className="py-2.5 rounded-xl bg-white border border-emerald-300 text-emerald-900 text-[11px] font-black leading-tight"
-              >
-                プールに1件追加
-              </button>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 pt-1">
-              <button
-                type="button"
-                onClick={addWeeklyPacingToPool}
-                className="text-[11px] font-bold text-emerald-900 underline underline-offset-2"
-              >
-                週1〜4をまとめてプールへ
-              </button>
-              <button
-                type="button"
-                onClick={async () => {
-                  await persistGoalPacing()
-                  showToast('ペース設定を保存したよ')
-                }}
-                className="text-[11px] font-bold text-emerald-800 underline underline-offset-2"
-              >
-                この設定だけ保存
-              </button>
-            </div>
           </div>
         </div>
       )}
@@ -1192,53 +762,80 @@ function PlanContent() {
               翌月
             </button>
           </div>
-          <p className="text-sm text-gray-600">
-            この1か月でどこまで進めるか、教科・ページの目安でも大丈夫です。
-          </p>
-          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] font-bold text-gray-600 bg-gray-50 rounded-xl px-3 py-2 border border-gray-100">
-            <span>未完了 {monthTasks.length}件</span>
-            <span className="text-gray-300 hidden sm:inline">|</span>
-            <span className="text-green-700">完了 {monthDoneCount}件</span>
-            <span className="text-gray-300 hidden sm:inline">|</span>
-            <span>プール {monthPoolCount}件</span>
-          </div>
-          {monthTaskProgressPct !== null && (
-            <div className="rounded-xl bg-white border border-gray-200 px-3 py-2.5 shadow-sm">
-              <div className="flex justify-between items-center text-[11px] font-bold text-gray-600 mb-1.5">
-                <span>月内タスク完了率</span>
-                <span className="text-green-700">{monthTaskProgressPct}%</span>
-              </div>
-              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden border border-gray-50">
-                <div
-                  className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-500"
-                  style={{ width: `${monthTaskProgressPct}%` }}
-                />
-              </div>
-              <p className="text-[10px] text-gray-400 font-bold mt-1.5">完了 {monthDoneCount} / 合計 {monthDoneCount + monthTasks.length}（未完了の学習タスク）</p>
+
+          {bigFocusMaterials.length > 0 ? (
+            <div className="rounded-2xl p-4 border border-emerald-200 bg-emerald-50/70 space-y-3">
+              <p className="text-sm font-black text-emerald-900">教材のページ（この月までにどこまで）</p>
+              {bigFocusMaterials.map(mat => {
+                const total = materialPageTotals[mat] ?? 0
+                const cur = monthPageTargets[mat]?.[selectedMonth]
+                return (
+                  <div key={mat} className="rounded-xl bg-white border border-emerald-100 p-3">
+                    <p className="text-xs font-black text-gray-900 truncate" title={mat}>
+                      {mat}
+                    </p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">
+                      全{total > 0 ? total : '—'}ページ
+                    </p>
+                    <label className="flex items-center gap-2 mt-2">
+                      <span className="text-xs font-bold text-gray-700 whitespace-nowrap">この月の終わりまで</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        className="flex-1 min-w-0 p-2 rounded-lg border border-emerald-200 font-black text-center text-sm tabular-nums"
+                        placeholder="ページ"
+                        value={cur !== undefined ? String(cur) : ''}
+                        onChange={e => {
+                          const raw = e.target.value.replace(/\D/g, '').slice(0, 4)
+                          setMonthPageTargets(prev => {
+                            const inner = { ...(prev[mat] || {}) }
+                            if (raw === '') {
+                              delete inner[selectedMonth]
+                            } else {
+                              const n = parseInt(raw, 10)
+                              if (!Number.isNaN(n) && n >= 1) inner[selectedMonth] = Math.min(9999, n)
+                            }
+                            const next = { ...prev }
+                            if (Object.keys(inner).length === 0) delete next[mat]
+                            else next[mat] = inner
+                            return next
+                          })
+                        }}
+                        onBlur={() => {
+                          setTimeout(() => void persistGoalPacing(), 0)
+                        }}
+                      />
+                      <span className="text-xs font-bold text-gray-600">ページ</span>
+                    </label>
+                  </div>
+                )
+              })}
             </div>
-          )}
-          <div className="rounded-2xl p-3 border border-emerald-200 bg-emerald-50/60 shadow-sm">
-            <p className="text-xs font-black text-emerald-900 mb-1">大目標タブのテンプレをここに反映</p>
-            <p className="text-[11px] text-emerald-800/95 mb-2 leading-snug">
-              「大目標」で選んだテンプレとペースの目安文を、<span className="font-black">{selectedMonth}</span> の月の到達目標にそのまま入れます。
-            </p>
+          ) : (
             <button
               type="button"
-              disabled={loadingCounts || totalUnits <= 0}
-              onClick={applyPacingToSelectedMonth}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-black shadow disabled:opacity-40"
+              onClick={() => goTab('big')}
+              className="w-full py-3 rounded-xl border-2 border-dashed border-gray-300 text-sm font-bold text-gray-600"
             >
-              この月に目安テキストを反映
+              大目標で教材を選ぶ →
             </button>
-          </div>
+          )}
+
+          {bigFocusFree.trim() ? (
+            <div className="rounded-xl p-3 bg-gray-50 border border-gray-200 text-xs text-gray-700">
+              <span className="font-black text-gray-500">その他（大目標）: </span>
+              {bigFocusFree.trim()}
+            </div>
+          ) : null}
+
           <div className="rounded-2xl p-4 border border-indigo-100 bg-indigo-50/40 shadow-sm">
-            <p className="text-sm font-black text-indigo-900 mb-2">月の到達目標</p>
+            <p className="text-sm font-black text-indigo-900 mb-2">この月のメモ</p>
             <textarea
               value={monthGoalDraft}
               onChange={e => setMonthGoalDraft(e.target.value)}
-              rows={4}
+              rows={3}
               className="w-full bg-white rounded-xl p-3 text-sm font-bold outline-none border border-indigo-100"
-              placeholder="例：第2単元の単語を1周する／算数は○ページまで"
+              placeholder="自由に書いてOK"
             />
             <button
               type="button"
@@ -1251,7 +848,7 @@ function PlanContent() {
           </div>
 
           <div>
-            <p className="text-xs font-black text-gray-700 mb-2">今月のタスク一覧（未完了）</p>
+            <p className="text-xs font-black text-gray-700 mb-2">今月のタスク（未完了）</p>
             {monthTasks.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
                 まだありません。「日々の予定」から追加すると月に紐づきます
