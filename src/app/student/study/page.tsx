@@ -2,7 +2,8 @@
 import { useEffect, useState, useRef, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { updatePlan, type PlanRow } from '@/lib/student'
+import { getUsernameFromSession } from '@/lib/auth-user'
+import { updatePlan, saveUserFields, type PlanRow } from '@/lib/student'
 
 type Resource = { video_url: string; explanation: string; hint_text: string; resource_type: string; image_url?: string }
 
@@ -26,9 +27,20 @@ function StudyHubContent() {
   useEffect(() => {
     async function fetchData() {
       if (!taskId) return
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        router.push('/login')
+        return
+      }
+      const username = getUsernameFromSession(session)
       const { data: taskData } = await supabase.from('plans').select('*').eq('id', taskId).single()
       if (taskData) {
         setTask(taskData)
+        setSeconds(Math.round((taskData.actual_minutes ?? 0) * 60))
+        await saveUserFields(username, {
+          current_status: 'doing',
+          status_updated_at: new Date().toISOString(),
+        })
         const { data: resData } = await supabase.from('learning_resources')
           .select('*')
           .eq('material_name', taskData.mid_plan)
@@ -38,7 +50,7 @@ function StudyHubContent() {
       setLoading(false)
     }
     fetchData()
-  }, [taskId])
+  }, [taskId, router])
 
   useEffect(() => {
     if (isActive) { timerRef.current = setInterval(() => setSeconds(s => s + 1), 1000) }
@@ -74,8 +86,19 @@ function StudyHubContent() {
 
   const handleComplete = async () => {
     if (!task) return
-    await updatePlan(task.id, { is_done: 1, actual_minutes: Math.ceil(seconds / 60) })
-    router.push('/student')
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) {
+      router.push('/login')
+      return
+    }
+    const username = getUsernameFromSession(session)
+    const minutes = Math.ceil(seconds / 60)
+    await updatePlan(task.id, { is_done: 1, actual_minutes: minutes })
+    await saveUserFields(username, {
+      current_status: 'waiting_check',
+      status_updated_at: new Date().toISOString(),
+    })
+    router.push(`/student/check?task_id=${task.id}`)
   }
 
   if (loading) return <div className="p-10 text-center animate-pulse text-yellow-600 font-bold">🐕 作戦会議中...</div>

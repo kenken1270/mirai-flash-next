@@ -2,6 +2,7 @@
 import { useEffect, useState, useMemo, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, loadPlans, insertPlan, updatePlan, deletePlan, saveUserFields, todayStr, type UserRow, type PlanRow } from '@/lib/student'
 
 function getWeekDates(center: string): string[] {
@@ -35,7 +36,7 @@ function PlanContent() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.split('@')[0] ?? ''
+      const uname = getUsernameFromSession(session)
       setUsername(uname)
       const [u, p] = await Promise.all([loadUser(uname), loadPlans(uname)])
       setUser(u); setPlans(p); setLoading(false)

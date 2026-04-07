@@ -2,6 +2,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, insertHelpRequest, loadHelpRequests, answerHelpRequest, type UserRow, type HelpRequestRow } from '@/lib/student'
 
 const SUBJECTS = ['算数', '国語', '理科', '社会', '英語', '中国語', 'その他']
@@ -28,7 +29,7 @@ function HelpContent() {
     const init = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const username = session.user.email?.split('@')[0] ?? ''
+      const username = getUsernameFromSession(session)
       const u = await loadUser(username)
       setUser(u)
       const h = await loadHelpRequests(username)

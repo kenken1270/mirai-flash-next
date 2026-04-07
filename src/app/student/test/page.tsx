@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 
 type ContentRow = { id: number; subject: string; content_type: string; title: string; url: string }
 type Book = { id: number; title: string; subtitle: string; cover_emoji: string; category: string }
@@ -53,7 +54,7 @@ export default function TestPage() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
+      const uname = getUsernameFromSession(session)
       const [{ data: contentData }, { data: bookData }, { data: setData }, { data: historyData }] = await Promise.all([
         supabase.from('content').select('*').order('id'),
         supabase.from('flashcard_books').select('*').order('id'),

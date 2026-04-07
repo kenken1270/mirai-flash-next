@@ -2,6 +2,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadPlans, updatePlan, saveUserFields, loadUser, todayStr, type PlanRow, type UserRow } from '@/lib/student'
 
 function formatYM(year: number, month: number) {
@@ -41,7 +42,7 @@ export default function CalendarPage() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.split('@')[0] ?? ''
+      const uname = getUsernameFromSession(session)
       setUsername(uname)
       const [u, p] = await Promise.all([loadUser(uname), loadPlans(uname)])
       setUser(u); setPlans(p); setLoading(false)

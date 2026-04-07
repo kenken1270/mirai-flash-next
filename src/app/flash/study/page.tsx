@@ -3,6 +3,7 @@
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { getUsernameFromSession } from '@/lib/auth-user'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -75,7 +76,7 @@ function StudyContent() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
+      const uname = getUsernameFromSession(session)
       setUsername(uname)
 
       let query = supabase.from('flashcards_v3')

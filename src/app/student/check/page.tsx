@@ -2,6 +2,7 @@
 import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadUser, type PlanRow, type UserRow } from '@/lib/student'
 
 function CheckContent() {
@@ -20,7 +21,7 @@ function CheckContent() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
+      const uname = getUsernameFromSession(session)
       const [userData, { data: taskData }] = await Promise.all([
         loadUser(uname),
         supabase.from('plans').select('*').eq('id', taskId).single()

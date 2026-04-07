@@ -2,6 +2,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { getUsernameFromSession } from '@/lib/auth-user'
 import { loadPlans, updatePlan, saveUserFields, loadUser, todayStr, type PlanRow, type UserRow } from '@/lib/student'
 
 export default function SchedulePage() {
@@ -26,7 +27,7 @@ export default function SchedulePage() {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
-      const uname = session.user.email?.replace('@mirai-juku.internal', '') ?? ''
+      const uname = getUsernameFromSession(session)
       setUsername(uname)
       const [userData, allPlans] = await Promise.all([loadUser(uname), loadPlans(uname)])
       setUser(userData)
@@ -214,7 +215,7 @@ export default function SchedulePage() {
                   {/* 学習開始ボタン */}
                   {task.is_done !== 1 && (
                     <div className="mt-2 ml-9">
-                      <button onClick={() => router.push(`/student/do/${task.id}`)}
+                      <button onClick={() => router.push(`/student/study?taskId=${task.id}`)}
                         className="bg-green-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-green-600 transition w-full">
                         📖 学習開始 →
                       </button>
