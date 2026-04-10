@@ -23,25 +23,25 @@
 | `item_no` | `item_no` | セット内の通し番号（1〜） |
 | `difficulty` | `difficulty` | 1（既定） |
 
-## Supabase に取り込む手順
+## Supabase に取り込む手順（コピペ用 SQL）
 
-1. **既存の書籍・セットを確認**  
-   `flashcard_books` に「みんなの日本語 初級Ⅰ」等があるか、なければ `flashcard_sets` に紐づく **新しいセット** を用意するか、既存の `set_id` を決める。
+**そのまま貼り付けられるファイルは `supabase/sql/` にあります。**
 
-2. **SQL を生成**（`set_id` を置き換え）  
-   リポジトリ直下で:
+1. **`supabase/sql/01_diagnose_flashcard_state.sql`** を SQL Editor で実行し、書籍・セットの `id` と既存データを確認する。
+2. **`supabase/sql/02_insert_minna_lesson20_flashcards.sql`** 内の **`WITH p AS` の `1`** を、使う **`flashcard_sets.id`** に書き換えてから、全文を実行する。
 
-   ```bash
-   node scripts/generate-flashcard-sql.mjs data/flashcards/minna-shokyu1-lesson20.json 123
-   ```
+詳細は **`supabase/sql/README.md`** を参照。
 
-   `123` は実際の `flashcard_sets.id` に置き換える。
+### JSON から `02` を再生成するとき
 
-3. **Supabase SQL Editor** で出力された `INSERT` を実行する（本番前はプレビュー環境で確認）。
+```bash
+node scripts/generate-flashcard-sql.mjs data/flashcards/minna-shokyu1-lesson20.json --paste --out supabase/sql/02_insert_minna_lesson20_flashcards.sql
+```
 
-4. **単語暗記・小テスト**  
-   - `/flash` で書籍選択 → ページ番号（`page_no: 20`）または `item_no` 範囲で学習。  
-   - `/student/test` の「単語」タブで同じ書籍の `item_no` 範囲を指定。
+### 単語暗記・小テスト
+
+- `/flash` で書籍選択 → ページ番号（`page_no: 20`）または `item_no` 範囲で学習。  
+- `/student/test` の「単語」タブで同じ書籍の `item_no` 範囲を指定。
 
 ## 注意
 
