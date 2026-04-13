@@ -102,40 +102,65 @@ export default function LoginPage() {
     }
 
     // ===== 生徒 =====
-    if (password !== STUDENT_PASSWORD) {
-      setError('パスワードが違います')
-      setLoading(false)
-      return
-    }
-
+    // 入力パスワードを優先（個別設定）、従来どおり Mirai2026 も許可
     const email = `${selected}@mirai-juku.internal`
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password: STUDENT_PASSWORD,
-    })
 
-    if (!signInError) {
+    const { error: signIn1 } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (!signIn1) {
       router.push('/student')
       return
     }
 
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { error: signInLegacy } = await supabase.auth.signInWithPassword({
       email,
       password: STUDENT_PASSWORD,
     })
+    if (!signInLegacy) {
+      router.push('/student')
+      return
+    }
+
+    let { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+    })
 
     if (signUpError) {
-      setError('ログインできませんでした。管理者に連絡してください。')
+      const msg = (signUpError.message ?? '').toLowerCase()
+      if (msg.includes('already') || msg.includes('registered')) {
+        setError('パスワードが違います')
+        setLoading(false)
+        return
+      }
+      signUpError = (
+        await supabase.auth.signUp({
+          email,
+          password: STUDENT_PASSWORD,
+        })
+      ).error
+    }
+
+    if (signUpError) {
+      setError('ログインできませんでした。パスワードかユーザー名を確認するか、管理者に連絡してください。')
       setLoading(false)
       return
     }
 
-    const { error: retryError } = await supabase.auth.signInWithPassword({
+    const { error: retry1 } = await supabase.auth.signInWithPassword({ email, password })
+    if (!retry1) {
+      router.push('/student')
+      return
+    }
+
+    const { error: retryLegacy } = await supabase.auth.signInWithPassword({
       email,
       password: STUDENT_PASSWORD,
     })
 
-    if (retryError) {
+    if (retryLegacy) {
       setError('ログインに失敗しました。管理者に連絡してください。')
       setLoading(false)
       return
