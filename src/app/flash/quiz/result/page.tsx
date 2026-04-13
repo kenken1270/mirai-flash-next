@@ -76,6 +76,7 @@ function ResultContent() {
   const itemStart = sp.get('item_start') ?? '1'
   const itemEnd   = sp.get('item_end')   ?? '9999'
   const questionCountRetry = sp.get('question_count')
+  const hidePromptRetry = sp.get('hide_prompt')
   const quizMode  = sp.get('mode')       ?? 'choice'
   const direction = sp.get('direction')  ?? 'lang1to2'
   const strictness= sp.get('strictness') ?? 'normal'
@@ -224,6 +225,7 @@ function ResultContent() {
                   strictness,
                 })
                 if (questionCountRetry) params.set('question_count', questionCountRetry)
+                if (hidePromptRetry) params.set('hide_prompt', hidePromptRetry)
                 router.push('/flash/quiz?' + params.toString())
               }}
               className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-4 rounded-2xl font-bold text-lg shadow-lg hover:opacity-90 transition">

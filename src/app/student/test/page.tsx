@@ -119,6 +119,7 @@ export default function TestPage() {
   const [layerEndPage, setLayerEndPage]     = useState(0)
   const [questionPickMode, setQuestionPickMode] = useState<'all' | 'random'>('all')
   const [randomQuestionCount, setRandomQuestionCount] = useState('20')
+  const [hidePromptQuiz, setHidePromptQuiz] = useState(false)
 
   useEffect(() => {
     async function init() {
@@ -256,6 +257,7 @@ export default function TestPage() {
       strictness,
     })
     if (questionPickMode === 'random') params.set('question_count', String(pick))
+    if (quizMode === 'choice' && hidePromptQuiz) params.set('hide_prompt', '1')
     router.push('/flash/quiz?' + params.toString())
   }
 
@@ -597,13 +599,35 @@ export default function TestPage() {
               <p className="text-sm font-bold text-gray-600 mb-2">🎮 出題形式</p>
               <div className="grid grid-cols-2 gap-2">
                 {(['choice', 'typing'] as const).map(m => (
-                  <button key={m} onClick={() => setQuizMode(m)}
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => {
+                      setQuizMode(m)
+                      if (m === 'typing') setHidePromptQuiz(false)
+                    }}
                     className={`py-2.5 rounded-xl text-sm font-bold border transition
-                      ${quizMode === m ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}>
+                      ${quizMode === m ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                  >
                     {m === 'choice' ? '🔤 4択' : '⌨️ 入力'}
                   </button>
                 ))}
               </div>
+              {quizMode === 'choice' && (
+                <label className="mt-3 flex items-start gap-3 cursor-pointer rounded-xl border border-gray-100 bg-gray-50/80 px-3 py-2.5">
+                  <input
+                    type="checkbox"
+                    checked={hidePromptQuiz}
+                    onChange={e => setHidePromptQuiz(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                  />
+                  <span className="text-xs text-gray-700 leading-snug">
+                    <span className="font-bold">音声のみ（文字を隠す）</span>
+                    <br />
+                    <span className="text-gray-500">問題の文字を出さず、「きく」で聞いて答えます（ヒントの説明文も非表示）。</span>
+                  </span>
+                </label>
+              )}
             </div>
 
             {/* ⑤ 判定レベル（入力モード時のみ） */}
