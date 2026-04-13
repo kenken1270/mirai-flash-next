@@ -196,6 +196,11 @@ export default function TestPage() {
     setItemEnd(String(Math.max(...inRange.map(g => g.max_item))))
   }
 
+  const numberPresets = useMemo(
+    () => (rangeMeta ? buildQuickNumberPresets(rangeMeta.absMin, rangeMeta.absMax) : []),
+    [rangeMeta],
+  )
+
   const bookSets     = sets.filter(s => s.book_id === selectedBook?.id)
   const firstSet     = bookSets[0]
   const lang1Label   = firstSet?.lang1_label    ?? '問題'
@@ -221,11 +226,6 @@ export default function TestPage() {
   const startNum      = parseInt(itemStart) || 1
   const endNum        = parseInt(itemEnd)   || startNum
   const questionCount = Math.max(0, endNum - startNum + 1)
-
-  const numberPresets = useMemo(
-    () => (rangeMeta ? buildQuickNumberPresets(rangeMeta.absMin, rangeMeta.absMax) : []),
-    [rangeMeta],
-  )
 
   function handleStart() {
     if (!selectedBook) return
