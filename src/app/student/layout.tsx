@@ -26,7 +26,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
       <header className="bg-yellow-400 px-4 py-4 shadow-sm flex items-center justify-between sticky top-0 z-50 text-gray-900">
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/student')}>
           <span className="text-2xl">🐕</span>
-          <h1 className="font-black italic tracking-tighter">MIRAI JUKU</h1>
+          <h1 className="font-black tracking-tight text-lg">未来塾</h1>
         </div>
         <button onClick={() => setIsOpen(!isOpen)} className="w-10 h-10 flex flex-col items-center justify-center gap-1.5 focus:outline-none z-[60]">
           <div className={`w-6 h-1 bg-gray-900 rounded-full transition-all ${isOpen ? 'rotate-45 translate-y-2.5' : ''}`}></div>
