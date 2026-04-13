@@ -12,12 +12,15 @@
 
 ## 有村先生アカウント（パスワード 1270）
 
-1. **`03_seed_user_arimura_sensei.sql`** の **A** を実行（`public.users` に `有村先生` を追加）。
-2. 同ファイルの **B** のとおり、Supabase **Authentication** でユーザーを作成  
-   メール: `有村先生@mirai-juku.internal`、パスワード: `1270`、Auto Confirm。
-3. ログイン画面の生徒タブで「有村先生」を選び、パスワードに **`1270`** を入力。
+Supabase Auth は **メールの @ より前に日本語など非ASCIIが使えません**。  
+そのため **ログインID（username / メール左側）は英数字**、**画面表示は `nickname`** に分けています。
 
-※ 生徒ログインは **入力したパスワード** と **従来の共通パスワード（Mirai2026）** の両方を試すようになっています。
+1. **`03_seed_user_arimura_sensei.sql`** を実行（`username = arimura_sensei`, `nickname = 有村先生`）。
+2. **Authentication → Users** でユーザーを作成  
+   メール: **`arimura_sensei@mirai-juku.internal`**、パスワード: **`1270`**、Auto Confirm。
+3. ログイン画面の生徒タブでは **「有村先生」** と表示され、パスワード **`1270`** で入る。
+
+※ 生徒ログインは **入力したパスワード** と **従来の共通パスワード（Mirai2026）** の両方を試します。
 
 ## 再生成
 
