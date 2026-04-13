@@ -111,6 +111,8 @@ function QuizContent() {
   const strictness = (searchParams.get('strictness') as Strictness) || 'normal'
   const label1 = searchParams.get('lang1_label') || '問題'
   const label2 = searchParams.get('lang2_label') || '答え'
+  const hidePrompt =
+    searchParams.get('hide_prompt') === '1' || searchParams.get('hide_prompt') === 'true'
 
   const [resolvedLabels, setResolvedLabels] = useState<{ l1: string; l2: string }>({ l1: '', l2: '' })
   const [cards, setCards] = useState<Card[]>([])
@@ -283,9 +285,23 @@ function QuizContent() {
         strictness,
       })
       if (questionCountLimit > 0) q.set('question_count', String(questionCountLimit))
+      if (hidePrompt) q.set('hide_prompt', '1')
       router.push('/flash/quiz/result?' + q.toString())
     },
-    [finishing, total, bookId, setIdParam, itemStart, itemEnd, questionCountLimit, mode, direction, strictness, router]
+    [
+      finishing,
+      total,
+      bookId,
+      setIdParam,
+      itemStart,
+      itemEnd,
+      questionCountLimit,
+      mode,
+      direction,
+      strictness,
+      hidePrompt,
+      router,
+    ]
   )
 
   const handleChoice = (picked: string) => {
@@ -355,9 +371,18 @@ function QuizContent() {
       </div>
 
       <div className={`text-center space-y-2 w-full max-w-lg transition ${shake ? 'animate-pulse' : ''}`}>
-        <p className="text-gray-500 text-sm">{promptPair.promptLabel}</p>
+        <p className="text-gray-500 text-sm">
+          {mode === 'choice' && hidePrompt ? '音声' : promptPair.promptLabel}
+        </p>
         <div className="flex flex-col items-center gap-2">
-          <h2 className="text-3xl md:text-4xl font-black text-gray-800 break-all px-2">{promptPair.prompt}</h2>
+          {mode === 'choice' && hidePrompt ? (
+            <div className="min-h-[5rem] w-full max-w-sm flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-amber-200 bg-amber-50/80 px-4 py-3">
+              <span className="text-sm font-bold text-amber-800/90">問題の文字は非表示です</span>
+              <span className="text-xs text-amber-700/80">「きく」だけで聞いて答えよう</span>
+            </div>
+          ) : (
+            <h2 className="text-3xl md:text-4xl font-black text-gray-800 break-all px-2">{promptPair.prompt}</h2>
+          )}
           <button
             type="button"
             onClick={speakQuizPrompt}
@@ -367,7 +392,7 @@ function QuizContent() {
             🔊 きく
           </button>
         </div>
-        <p className="text-xs text-gray-400">{current.lang3}</p>
+        {!(mode === 'choice' && hidePrompt) && <p className="text-xs text-gray-400">{current.lang3}</p>}
       </div>
 
       {mode === 'choice' && (
@@ -405,7 +430,9 @@ function QuizContent() {
       )}
 
       <p className="text-xs text-gray-400 max-w-lg text-center">
-        {mode === 'choice' ? '四択' : '入力'}・{direction === 'lang1to2' ? `${effLang1}→${effLang2}` : `${effLang2}→${effLang1}`}・
+        {mode === 'choice' ? '四択' : '入力'}
+        {mode === 'choice' && hidePrompt ? '・音声のみ' : ''}・
+        {direction === 'lang1to2' ? `${effLang1}→${effLang2}` : `${effLang2}→${effLang1}`}・
         {strictness === 'strict' ? '厳密' : strictness === 'normal' ? '標準' : 'ゆるめ'}
       </p>
     </div>
