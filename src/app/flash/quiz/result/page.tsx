@@ -75,6 +75,9 @@ function ResultContent() {
   const bookId = sp.get('book_id')
   const itemStart = sp.get('item_start') ?? '1'
   const itemEnd   = sp.get('item_end')   ?? '9999'
+  const quizMode  = sp.get('mode')       ?? 'choice'
+  const direction = sp.get('direction')  ?? 'lang1to2'
+  const strictness= sp.get('strictness') ?? 'normal'
 
   const [history, setHistory]         = useState<QuizResult[]>([])
   const [showFireworks, setShowFireworks] = useState(false)
@@ -215,6 +218,9 @@ function ResultContent() {
                   book_id: bookId ?? '',
                   item_start: itemStart,
                   item_end: itemEnd,
+                  mode: quizMode,
+                  direction,
+                  strictness,
                 })
                 router.push('/flash/quiz?' + params.toString())
               }}

@@ -12,6 +12,7 @@
 ### flashcards_v3
 
 - 単語カード。`set_id` でセットに紐づく。
+- **ローマ字 × Web Speech（ブラウザ TTS）:** 英語エンジンでローマ字を読ませると日本語の音とずれる。判定・再生テキストは **`src/lib/flash-kana-tts.ts`** に集約。**学習（`/flash/study`）**では **読み方トグル**（かなの音／自動／表示のまま）を選べ、選択は **`localStorage` `mirai.flash.studyTtsReadMode`** に保存。一覧・小テストは従来の自動判定。発音記号（IPA）を `lang1_sub` に載せる案はあるが、標準 TTS は IPA を安定読みしないため表示補助向き。
 - 言語列の意味（運用上の呼び方）:
   - `lang1` — 母国語/中国語など表面側
   - `lang2` — ひらがな等
@@ -22,6 +23,7 @@
 ### flashcard_sets
 
 - セット名・カテゴリ・科目・TTS言語・ラベル（`lang1_label` 等）を保持。
+- 本番 DB では **`set_name` と `category` が NOT NULL** のため、新規セット投入時は両方に文字列を指定する（`05_insert_kana_master_flashcards.sql` 参照）。
 
 ### learning_resources
 

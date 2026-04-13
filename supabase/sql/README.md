@@ -26,6 +26,11 @@ Supabase Auth は **メールの @ より前に日本語など非ASCIIが使え�
 2. 目次を編集したい場合は `scripts/learning-materials/nikkyou-kentei-v5-data.mjs` を直し、  
    `node scripts/generate-nikkyou-toc-sql.mjs --out supabase/sql/04_nikkyou_kentei_guide_v5_toc.sql` で再生成。
 
+## かなマスター（初級）
+
+1. **`05_insert_kana_master_flashcards.sql`** を SQL Editor で実行すると、`flashcard_books` / `flashcard_sets` / `flashcards_v3` に **ひら→カタ→単語** のかなコースが一括投入される（`item_no` は連番、`page_no` で層を区別）。
+2. 同タイトルで再投入すると書籍が重複する。差し替えるときは該当 `book` / `set` / `cards` を先に削除するか、`scripts/generate-kana-beginner.mjs` を編集してから `node scripts/generate-kana-beginner.mjs` で JSON / SQL を再生成する。
+
 ## 再生成
 
 JSON を直したあと、次で `02` を上書きできる（UTF-8 で保存）。

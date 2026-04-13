@@ -16,6 +16,17 @@ WHERE table_schema = 'public'
   AND table_name = 'flashcards_v3'
 ORDER BY ordinal_position;
 
+-- 1b) flashcard_sets の列（NOT NULL / set_name など INSERT 時に必須の列を確認）
+SELECT
+  column_name,
+  data_type,
+  is_nullable,
+  column_default
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'flashcard_sets'
+ORDER BY ordinal_position;
+
 -- 2) 登録書籍一覧
 SELECT id, title, subtitle, category
 FROM flashcard_books
@@ -26,6 +37,8 @@ SELECT
   s.id AS set_id,
   s.book_id,
   b.title AS book_title,
+  s.set_name,
+  s.category,
   s.lang1_label,
   s.lang2_label,
   s.lang1_tts_lang,
