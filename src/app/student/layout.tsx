@@ -10,11 +10,16 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
   const menuItems = [
     { name: '🔥 ホーム / 今日', path: '/student', icon: '🏠' },
-    { name: '📅 未来の見通し', path: '/student/plan', icon: '🗺️' },
+    { name: '📅 未来の計画', path: '/student/plan?tab=daily', icon: '🗺️' },
     { name: '🃏 単語学習', path: '/flash', icon: '📚' },
     { name: '📝 小テスト', path: '/student/test', icon: '✏️' },
     { name: '🎰 ガチャ', path: '/student/gacha', icon: '🎁' },
   ]
+
+  function menuItemActive(path: string): boolean {
+    if (path === '/student/plan?tab=daily') return pathname === '/student/plan'
+    return pathname === path
+  }
 
   return (
     <div className="min-h-screen bg-[#FFFDF0] flex flex-col font-sans text-gray-800">
@@ -38,7 +43,7 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
             <nav className="space-y-2 flex-1">
               {menuItems.map((item) => (
                 <Link key={item.path} href={item.path} onClick={() => setIsOpen(false)}
-                  className={`flex items-center gap-3 p-4 rounded-2xl font-bold transition-all ${pathname === item.path ? 'bg-yellow-400 text-gray-900 shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
+                  className={`flex items-center gap-3 p-4 rounded-2xl font-bold transition-all ${menuItemActive(item.path) ? 'bg-yellow-400 text-gray-900 shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}>
                   <span className="text-xl">{item.icon}</span>
                   <span className="text-sm">{item.name}</span>
                 </Link>

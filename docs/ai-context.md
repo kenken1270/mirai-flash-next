@@ -27,6 +27,7 @@
 
 - 教材キーでの紐付け、解説テキスト、動画URL、画像。
 - **解説の多言語:** `[:ja]...[:zh]...` のような区切り形式を**壊さない**（パース前提のUIがある場合がある）。
+- **`material_total_pages`（任意）:** 教科書の総ページ数。管理画面で教材ごとに設定すると、計画の「量の目安」は登録ページ数ではなくこの値を優先して使う。未設定時は `resource_type: page` の `page_no` の種類数で集計。
 
 ### review_logs / users / plans
 
@@ -48,6 +49,12 @@
 - Supabase Auth の `user.email` から **`@` より前のローカル部** を `users.username` / `plans.username` / `review_logs.username` 等のキーとして使う。
 - 実装は **`src/lib/auth-user.ts`** の `usernameFromEmail` / `getUsernameFromSession` に集約。画面ごとに `split` / `replace` しない。
 
+### 未来の計画（`/student/plan`）
+
+- **タブ:** 大計画（`plans.big_plan` 全行一括更新）／中計画（`task_type: month_summary` + `month_plan: YYYY-MM` で1行／月）／小計画（Quest Pool + 週カレンダー）。
+- **小タスク:** `month_plan` に **YYYY-MM** を保存。プール追加モーダルで `type="month"` 入力。
+- **移動:** 日タスクの「明日へ」「プールへ」で `task_date` を更新。
+
 ### 学習タスクの画面（統一）
 
 - **メイン:** `/student/study?taskId=…` — `learning_resources` による解説・動画・多言語ヒント＋タイマー。開始時 `users.current_status: doing`、完了後 `waiting_check` → `/student/check`。
@@ -56,6 +63,10 @@
 ### 学生ホームの EXP バー（暫定）
 
 - `users.current_points` をもとに、**100 EXP ごとの区間内進捗**（`current_points % 100`）をプログレスバーに表示。Lv計算式が固まったら `docs` と定数を更新する。
+
+### デプロイ運用（本番 / 開発）
+
+- 日々は **`dev` → プレビュー**、本番更新は **`main` マージでまとめて** する方針。詳細は [deployment-workflow.md](./deployment-workflow.md)。
 
 ### 今後追記
 

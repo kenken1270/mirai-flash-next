@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { withTimeout } from '@/lib/with-timeout'
 
 const STUDENT_PASSWORD = 'Mirai2026'
 const ADMIN_PASSWORD = 'admin'
@@ -17,26 +18,49 @@ export default function LoginPage() {
   const [pin, setPin] = useState('')
   const [parentName, setParentName] = useState('')
   const [error, setError] = useState('')
+  const [usersFetchError, setUsersFetchError] = useState('')
   const [loading, setLoading] = useState(false)
   const [loadingUsers, setLoadingUsers] = useState(true)
 
   useEffect(() => {
+    let cancelled = false
     async function fetchUsers() {
-      const { data } = await supabase
-        .from('users')
-        .select('username')
-        .order('username')
-      if (data) {
-        const names = data.map((r: { username: string }) => r.username)
-        setUserList(names)
-        if (names.length > 0) {
-          setSelected(names[0])
-          setParentName(names[0])
+      setUsersFetchError('')
+      try {
+        const q = supabase.from('users').select('username').order('username')
+        const { data, error: qErr } = await withTimeout(
+          q as unknown as Promise<{ data: { username: string }[] | null; error: { message: string } | null }>,
+          20000,
+          'ユーザー一覧'
+        )
+        if (cancelled) return
+        if (qErr) {
+          setUsersFetchError('ユーザー一覧を取得できませんでした。ネットワークを確認してください。')
+          return
         }
+        if (data) {
+          const names = data.map((r: { username: string }) => r.username)
+          setUserList(names)
+          if (names.length > 0) {
+            setSelected(names[0])
+            setParentName(names[0])
+          }
+        }
+      } catch (e) {
+        console.error('fetchUsers:', e)
+        if (!cancelled) {
+          setUsersFetchError(
+            'サーバーへの接続がタイムアウトしました。VPN・Wi‑Fi・Supabase の状態を確認してください。'
+          )
+        }
+      } finally {
+        if (!cancelled) setLoadingUsers(false)
       }
-      setLoadingUsers(false)
     }
     fetchUsers()
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   function resetForm() {
@@ -157,6 +181,12 @@ export default function LoginPage() {
           <form onSubmit={handleLogin} className="p-6 space-y-4">
 
             {/* 生徒 */}
+            {usersFetchError && (
+              <div className="bg-amber-50 border border-amber-200 text-amber-900 rounded-xl px-4 py-2 text-sm">
+                {usersFetchError}
+              </div>
+            )}
+
             {role === 'student' && (
               <div>
                 <label className="block text-sm font-medium text-gray-600 mb-1">なまえを選んでください</label>

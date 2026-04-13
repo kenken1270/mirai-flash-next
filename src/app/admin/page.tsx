@@ -3,9 +3,17 @@ import { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 
 type Resource = {
-  id: string; material_name: string; page_no: string; video_url: string; 
-  explanation: string; hint_text: string; resource_type: string; 
-  image_url?: string; created_at: string;
+  id: string
+  material_name: string
+  page_no: string
+  video_url: string
+  explanation: string
+  hint_text: string
+  resource_type: string
+  image_url?: string
+  created_at: string
+  /** 教科書の総ページ数（計画の目安用）。同一教材の全行で共有 */
+  material_total_pages?: number | null
 }
 
 export default function AdminPage() {
@@ -18,9 +26,18 @@ export default function AdminPage() {
   const [subTab, setSubTab] = useState<'page' | 'common'>('page')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
-  const [form, setForm] = useState({ 
-    material_name: '', page_no: '', video_url: '', explanation: '', hint_text: '', resource_type: 'page', image_url: '' 
+  const [form, setForm] = useState({
+    material_name: '',
+    page_no: '',
+    video_url: '',
+    explanation: '',
+    hint_text: '',
+    resource_type: 'page',
+    image_url: '',
   })
+  /** 教材単位：教科書の総ページ数（児童の日々の計画の目安に使う） */
+  const [materialTotalPagesInput, setMaterialTotalPagesInput] = useState('')
+  const [savingTotalPages, setSavingTotalPages] = useState(false)
 
   useEffect(() => { fetchResources() }, [])
 
@@ -34,6 +51,18 @@ export default function AdminPage() {
   }
 
   const materials = useMemo(() => Array.from(new Set(resources.map(r => r.material_name))), [resources])
+
+  useEffect(() => {
+    if (!selectedMaterial) {
+      setMaterialTotalPagesInput('')
+      return
+    }
+    const rows = resources.filter(r => r.material_name === selectedMaterial)
+    const nums = rows
+      .map(r => r.material_total_pages)
+      .filter((n): n is number => typeof n === 'number' && n > 0)
+    setMaterialTotalPagesInput(nums.length ? String(Math.max(...nums)) : '')
+  }, [selectedMaterial, resources])
   
   const filteredResources = useMemo(() => {
     return resources.filter(r => r.material_name === selectedMaterial && r.resource_type === subTab)
@@ -47,6 +76,41 @@ export default function AdminPage() {
       await supabase.from('learning_resources').insert([dataToSave])
     }
     setEditingId(null); setIsAdding(false); fetchResources()
+  }
+
+  async function saveMaterialTotalPages() {
+    if (!selectedMaterial) return
+    setSavingTotalPages(true)
+    try {
+      const raw = materialTotalPagesInput.trim()
+      if (raw === '') {
+        const { error } = await supabase
+          .from('learning_resources')
+          .update({ material_total_pages: null })
+          .eq('material_name', selectedMaterial)
+        if (error) {
+          alert(error.message)
+          return
+        }
+      } else {
+        const n = parseInt(raw, 10)
+        if (Number.isNaN(n) || n < 1) {
+          alert('1以上の整数を入力するか、空にして登録ページ数ベースに戻してください')
+          return
+        }
+        const { error } = await supabase
+          .from('learning_resources')
+          .update({ material_total_pages: n })
+          .eq('material_name', selectedMaterial)
+        if (error) {
+          alert(error.message)
+          return
+        }
+      }
+      await fetchResources()
+    } finally {
+      setSavingTotalPages(false)
+    }
   }
 
   return (
@@ -88,12 +152,41 @@ export default function AdminPage() {
                 </div>
               ) : (
                 <div className="space-y-6 animate-in fade-in duration-300">
-                  <div className="flex justify-between items-end">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:justify-between sm:items-end">
                     <div>
                       <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Editing Material</p>
                       <h2 className="text-2xl font-black text-slate-800">{selectedMaterial}</h2>
                     </div>
-                    <button onClick={() => {setIsAdding(true); setEditingId(null); setForm({material_name: selectedMaterial, page_no:'', video_url:'', explanation:'', hint_text:'', resource_type: subTab, image_url:''})}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition">＋ 新規追加</button>
+                    <button onClick={() => {setIsAdding(true); setEditingId(null); setForm({material_name: selectedMaterial, page_no:'', video_url:'', explanation:'', hint_text:'', resource_type: subTab, image_url:''})}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition shrink-0">＋ 新規追加</button>
+                  </div>
+
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 space-y-2">
+                    <p className="text-xs font-black text-amber-900 uppercase tracking-wide">計画用・教科書の総ページ数</p>
+                    <p className="text-[11px] text-amber-900/80 leading-relaxed">
+                      児童の「量の目安」は、この数を優先して1日あたりに割ります。空にすると、登録済みページの種類数だけを数えます（未登録が多いと少なく見えます）。
+                    </p>
+                    <div className="flex flex-wrap items-end gap-2">
+                      <label className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-slate-700 whitespace-nowrap">総ページ数</span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={materialTotalPagesInput}
+                          onChange={e => setMaterialTotalPagesInput(e.target.value)}
+                          placeholder="例: 120"
+                          className="w-28 bg-white border border-amber-200 rounded-xl px-3 py-2 text-sm font-bold"
+                        />
+                        <span className="text-sm font-bold text-slate-600">ページ</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={saveMaterialTotalPages}
+                        disabled={savingTotalPages}
+                        className="px-4 py-2 rounded-xl bg-amber-600 text-white text-sm font-black disabled:opacity-50"
+                      >
+                        {savingTotalPages ? '保存中…' : 'この教材に保存'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* サブタブ切替 */}

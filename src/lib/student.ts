@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { GOAL_PACING_EVENT_TYPE, type GoalPacingPayload } from './goal-templates'
 
 export type UserRow = {
   exp?: number
@@ -63,11 +64,13 @@ export async function loadAllUsers(): Promise<UserRow[]> {
 }
 
 export async function loadUser(username: string): Promise<UserRow | null> {
-  const { data } = await supabase
+  if (!username) return null
+  const { data, error } = await supabase
     .from('users')
     .select('*')
     .eq('username', username)
-    .single()
+    .maybeSingle()
+  if (error) console.error('loadUser:', error.message)
   return data ?? null
 }
 
@@ -141,6 +144,33 @@ export async function insertEvent(row: Omit<EventRow, 'id'>): Promise<void> {
 
 export async function deleteEvent(id: number): Promise<void> {
   await supabase.from('events').delete().eq('id', id)
+}
+
+export async function loadLatestGoalPacing(username: string): Promise<GoalPacingPayload | null> {
+  const { data } = await supabase
+    .from('events')
+    .select('*')
+    .eq('username', username)
+    .eq('event_type', GOAL_PACING_EVENT_TYPE)
+    .order('id', { ascending: false })
+    .limit(1)
+  const row = data?.[0]
+  if (!row?.note) return null
+  try {
+    return JSON.parse(row.note) as GoalPacingPayload
+  } catch {
+    return null
+  }
+}
+
+export async function saveGoalPacing(username: string, payload: GoalPacingPayload): Promise<void> {
+  await insertEvent({
+    username,
+    event_name: payload.templateId,
+    event_date: todayStr(),
+    event_type: GOAL_PACING_EVENT_TYPE,
+    note: JSON.stringify(payload),
+  })
 }
 
 // ===========================
