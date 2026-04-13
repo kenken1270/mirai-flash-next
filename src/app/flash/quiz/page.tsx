@@ -124,6 +124,11 @@ function QuizContent() {
   const [shake, setShake] = useState(false)
   const [choiceOptions, setChoiceOptions] = useState<string[]>([])
   const [finishing, setFinishing] = useState(false)
+  /** この問題で既にミスを1回カウントしたか（連打でミスが増えない） */
+  const [hasMissedThisQuestion, setHasMissedThisQuestion] = useState(false)
+  /** 正解演出中は操作を受け付けない */
+  const [isResolving, setIsResolving] = useState(false)
+  const [feedback, setFeedback] = useState<'none' | 'correct' | 'wrong'>('none')
 
   useEffect(() => {
     async function loadSetLabels() {
@@ -202,6 +207,9 @@ function QuizContent() {
     if (!current || !cards.length) return
     if (mode === 'choice') setChoiceOptions(buildChoiceOptions(current, cards, direction))
     setTypingValue('')
+    setHasMissedThisQuestion(false)
+    setFeedback('none')
+    setIsResolving(false)
   }, [current, cards, mode, direction, currentIdx])
 
   const effLang1 = resolvedLabels.l1 || label1 || '問題'
@@ -305,35 +313,65 @@ function QuizContent() {
   )
 
   const handleChoice = (picked: string) => {
-    if (!current) return
+    if (!current || isResolving) return
     const ok = answersMatch(picked, promptPair.answer, strictness, answerIsRomaji)
     if (ok) {
-      if (currentIdx + 1 >= deck.length) {
-        void goToResult(missCount, total)
-      } else {
-        setCurrentIdx((i) => i + 1)
-      }
+      setIsResolving(true)
+      setFeedback('correct')
+      const idx = currentIdx
+      const misses = missCount
+      window.setTimeout(() => {
+        setFeedback('none')
+        setIsResolving(false)
+        if (idx + 1 >= deck.length) {
+          void goToResult(misses, total)
+        } else {
+          setCurrentIdx((i) => i + 1)
+        }
+      }, 850)
     } else {
-      setMissCount((m) => m + 1)
+      if (!hasMissedThisQuestion) {
+        setMissCount((m) => m + 1)
+        setHasMissedThisQuestion(true)
+      }
+      setFeedback('wrong')
       setShake(true)
-      setTimeout(() => setShake(false), 400)
+      window.setTimeout(() => {
+        setShake(false)
+        setFeedback('none')
+      }, 550)
     }
   }
 
   const handleTypingSubmit = (e: FormEvent) => {
     e.preventDefault()
-    if (!current) return
+    if (!current || isResolving) return
     const ok = answersMatch(typingValue, promptPair.answer, strictness, answerIsRomaji)
     if (ok) {
-      if (currentIdx + 1 >= deck.length) {
-        void goToResult(missCount, total)
-      } else {
-        setCurrentIdx((i) => i + 1)
-      }
+      setIsResolving(true)
+      setFeedback('correct')
+      const idx = currentIdx
+      const misses = missCount
+      window.setTimeout(() => {
+        setFeedback('none')
+        setIsResolving(false)
+        if (idx + 1 >= deck.length) {
+          void goToResult(misses, total)
+        } else {
+          setCurrentIdx((i) => i + 1)
+        }
+      }, 850)
     } else {
-      setMissCount((m) => m + 1)
+      if (!hasMissedThisQuestion) {
+        setMissCount((m) => m + 1)
+        setHasMissedThisQuestion(true)
+      }
+      setFeedback('wrong')
       setShake(true)
-      setTimeout(() => setShake(false), 400)
+      window.setTimeout(() => {
+        setShake(false)
+        setFeedback('none')
+      }, 550)
     }
   }
 
@@ -360,7 +398,33 @@ function QuizContent() {
   }
 
   return (
-    <div className="min-h-screen bg-[#FFFDF0] p-4 flex flex-col items-center gap-6 pb-16">
+    <div className="relative min-h-screen bg-[#FFFDF0] p-4 flex flex-col items-center gap-6 pb-16">
+      {feedback === 'correct' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
+          <div className="absolute inset-0 bg-emerald-400/25" aria-hidden />
+          <div className="relative flex animate-bounce flex-col items-center gap-2 rounded-3xl border-4 border-emerald-400 bg-white px-10 py-8 shadow-2xl">
+            <span className="text-7xl leading-none drop-shadow-md" aria-hidden>
+              🌟
+            </span>
+            <span className="text-3xl font-black tracking-tight text-emerald-600">せいかい！</span>
+            <span className="text-sm font-bold text-emerald-700/90">すばらしい！</span>
+          </div>
+        </div>
+      )}
+      {feedback === 'wrong' && (
+        <div
+          className="fixed top-20 left-1/2 z-40 -translate-x-1/2 rounded-2xl border-2 border-red-400 bg-red-50 px-6 py-3 shadow-lg"
+          role="status"
+        >
+          <p className="flex items-center gap-2 text-lg font-black text-red-600">
+            <span className="text-2xl" aria-hidden>
+              ✗
+            </span>
+            ちがうよ
+          </p>
+          <p className="text-center text-xs font-bold text-red-500/90">もういちど えらんでね</p>
+        </div>
+      )}
       <div className="w-full max-w-lg flex justify-between items-center bg-yellow-400 p-4 rounded-2xl shadow-sm">
         <button type="button" onClick={() => router.back()} className="font-bold text-gray-900">
           ← もどる
@@ -370,7 +434,11 @@ function QuizContent() {
         </span>
       </div>
 
-      <div className={`text-center space-y-2 w-full max-w-lg transition ${shake ? 'animate-pulse' : ''}`}>
+      <div
+        className={`text-center space-y-2 w-full max-w-lg transition rounded-2xl px-2 py-1
+          ${shake ? 'animate-pulse ring-4 ring-red-300/80' : ''}
+          ${feedback === 'correct' ? 'ring-4 ring-emerald-400 shadow-lg shadow-emerald-200/50' : ''}`}
+      >
         <p className="text-gray-500 text-sm">
           {mode === 'choice' && hidePrompt ? '音声' : promptPair.promptLabel}
         </p>
@@ -386,7 +454,8 @@ function QuizContent() {
           <button
             type="button"
             onClick={speakQuizPrompt}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-yellow-100 hover:bg-yellow-200 text-sm font-bold text-yellow-900 border border-yellow-200"
+            disabled={isResolving}
+            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-yellow-100 hover:bg-yellow-200 text-sm font-bold text-yellow-900 border border-yellow-200 disabled:opacity-40 disabled:pointer-events-none"
             title="ローマ字教材はかなの読みで再生します"
           >
             🔊 きく
@@ -401,8 +470,9 @@ function QuizContent() {
             <button
               key={i}
               type="button"
+              disabled={isResolving}
               onClick={() => handleChoice(opt)}
-              className="min-h-[3.5rem] px-3 py-3 bg-white border-b-4 border-gray-200 rounded-xl text-lg md:text-xl font-bold text-gray-800 shadow-sm active:border-b-0 active:translate-y-1"
+              className="min-h-[3.5rem] px-3 py-3 bg-white border-b-4 border-gray-200 rounded-xl text-lg md:text-xl font-bold text-gray-800 shadow-sm active:border-b-0 active:translate-y-1 disabled:opacity-40 disabled:pointer-events-none disabled:active:translate-y-0"
             >
               {opt}
             </button>
@@ -416,13 +486,15 @@ function QuizContent() {
           <input
             value={typingValue}
             onChange={(e) => setTypingValue(e.target.value)}
+            readOnly={isResolving}
             autoComplete="off"
-            className="w-full text-2xl px-4 py-3 rounded-xl border-2 border-yellow-200 focus:border-yellow-400 outline-none"
+            className="w-full text-2xl px-4 py-3 rounded-xl border-2 border-yellow-200 focus:border-yellow-400 outline-none read-only:bg-gray-50"
             placeholder="ここに入力"
           />
           <button
             type="submit"
-            className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-md"
+            disabled={isResolving}
+            className="w-full py-4 bg-indigo-600 text-white font-bold rounded-2xl shadow-md disabled:opacity-40"
           >
             答え合わせ
           </button>
