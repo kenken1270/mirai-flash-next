@@ -130,8 +130,6 @@ function PlanContent() {
   const [countLines, setCountLines] = useState<CountLine[]>([])
   const [totalUnits, setTotalUnits] = useState(0)
   const [initError, setInitError] = useState<string | null>(null)
-  /** 「ベースの割り振りにする」と入力して実行する用 */
-  const [baseAllocateInput, setBaseAllocateInput] = useState('')
 
   /** 空欄・途中入力時はプレビュー用に既定値を使う（保存・反映は blur 後の文字列を基準にする） */
   const pacingMonths = useMemo(() => {
@@ -807,107 +805,153 @@ function PlanContent() {
 
           {bigFocusMaterials.length > 0 ? (
             <>
-              <div className="rounded-2xl p-4 border border-violet-200 bg-violet-50/60 space-y-2">
+              <div className="rounded-2xl p-4 border border-violet-200 bg-violet-50/60 space-y-3">
                 <p className="text-sm font-black text-violet-900">ベースの割り振り</p>
                 <p className="text-[11px] text-violet-950/80 leading-relaxed">
-                  下に <span className="font-black">ベースの割り振りにする</span> と入力すると、大目標の教材を期間内で終わるようページを自動入力します（前の月から詰めます。余った月は空欄のまま）。
+                  大目標の教材を、期間内で終わるよう各月のページに<strong className="font-black">均等に</strong>割り振ります（前の月から順に埋めます。足りない月は空欄のまま）。
                 </p>
-                <input
-                  type="text"
-                  value={baseAllocateInput}
-                  onChange={e => setBaseAllocateInput(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key !== 'Enter') return
-                    if (baseAllocateInput.trim() === 'ベースの割り振りにする') {
-                      void applyBasePageAllocation()
-                      setBaseAllocateInput('')
-                    }
-                  }}
-                  onBlur={() => {
-                    if (baseAllocateInput.trim() !== 'ベースの割り振りにする') return
-                    void applyBasePageAllocation()
-                    setBaseAllocateInput('')
-                  }}
-                  placeholder="ベースの割り振りにする"
-                  className="w-full p-2.5 rounded-xl border border-violet-200 bg-white text-sm font-bold outline-none focus:ring-2 focus:ring-violet-300"
-                />
+                <button
+                  type="button"
+                  onClick={() => void applyBasePageAllocation()}
+                  disabled={horizonMonthKeys.length === 0 || bigFocusMaterials.length === 0}
+                  className="w-full py-3.5 rounded-xl bg-violet-600 hover:bg-violet-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm font-black shadow-md active:scale-[0.99] transition flex items-center justify-center gap-2"
+                >
+                  <span aria-hidden>📐</span>
+                  ページを自動で埋める
+                </button>
+                <p className="text-[10px] text-violet-800/70 text-center">
+                  上の「大目標の教材」と「期間」の月数が設定されている前提です
+                </p>
               </div>
 
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 overflow-hidden">
-                <div className="px-3 py-2 bg-emerald-100/80 border-b border-emerald-200">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/40 overflow-hidden">
+                <div className="px-3 py-2.5 bg-emerald-100/90 border-b border-emerald-200">
                   <p className="text-sm font-black text-emerald-900">教材のページ（各月の終わりまでにどこまで）</p>
+                  <p className="text-[10px] text-emerald-800/80 mt-0.5 font-bold">
+                    下に並ぶのは<strong className="font-black">月ごとのブロック</strong>です。色の帯で月が切り替わります。
+                  </p>
                 </div>
-                <div className="max-h-[min(70vh,520px)] overflow-y-auto divide-y divide-emerald-100">
-                  {horizonMonthKeys.map(monthKey => {
+                <div className="p-3 sm:p-4 space-y-6 bg-[#f8faf8]">
+                  {horizonMonthKeys.map((monthKey, monthIndex) => {
                     const [yy, mm] = monthKey.split('-')
+                    const monthNum = Number(mm)
+                    const totalMonths = horizonMonthKeys.length
+                    const headerStyles = [
+                      'from-emerald-600 to-teal-700',
+                      'from-sky-600 to-blue-700',
+                      'from-violet-600 to-indigo-700',
+                      'from-amber-600 to-orange-700',
+                    ]
+                    const stripeStyles = [
+                      'bg-emerald-500',
+                      'bg-sky-500',
+                      'bg-violet-500',
+                      'bg-amber-500',
+                    ]
+                    const hi = monthIndex % headerStyles.length
                     return (
-                      <div key={monthKey} className="p-3 space-y-3 bg-white/90">
-                        <p className="text-xs font-black text-emerald-950">
-                          {yy}年{Number(mm)}月
-                        </p>
-                        {bigFocusMaterials.map(mat => {
-                          const total = materialPageTotals[mat] ?? 0
-                          const cur = monthPageTargets[mat]?.[monthKey]
-                          return (
-                            <div key={`${monthKey}-${mat}`} className="rounded-xl bg-emerald-50/50 border border-emerald-100 p-2.5">
-                              <p className="text-[11px] font-black text-gray-900 truncate" title={mat}>
-                                {mat}
+                      <article
+                        key={monthKey}
+                        className="relative rounded-2xl border-2 border-slate-200/90 bg-white shadow-[0_4px_24px_-4px_rgba(15,23,42,0.12)] overflow-hidden scroll-mt-4"
+                        aria-labelledby={`month-heading-${monthKey}`}
+                      >
+                        <div
+                          className={`absolute left-0 top-0 bottom-0 w-1.5 ${stripeStyles[hi]}`}
+                          aria-hidden
+                        />
+                        <header
+                          className={`bg-gradient-to-r ${headerStyles[hi]} text-white pl-4 pr-3 py-3 sm:pl-5 sm:py-3.5`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <p id={`month-heading-${monthKey}`} className="text-[11px] font-bold opacity-90 tracking-wide">
+                                {yy}年
                               </p>
-                              <p className="text-[10px] text-gray-500 mt-0.5">全{total > 0 ? total : '—'}ページ</p>
-                              <label className="flex items-center gap-2 mt-1.5 flex-wrap">
-                                <span className="text-[11px] font-bold text-gray-700 whitespace-nowrap">この月の終わりまで</span>
-                                <input
-                                  type="text"
-                                  inputMode="numeric"
-                                  className="flex-1 min-w-[4rem] max-w-[120px] p-2 rounded-lg border border-emerald-200 font-black text-center text-sm tabular-nums"
-                                  placeholder="ページ"
-                                  value={cur !== undefined ? String(cur) : ''}
-                                  onChange={e => {
-                                    const raw = e.target.value.replace(/\D/g, '').slice(0, 4)
-                                    setMonthPageTargets(prev => {
-                                      const inner = { ...(prev[mat] || {}) }
-                                      if (raw === '') {
-                                        delete inner[monthKey]
-                                      } else {
-                                        const n = parseInt(raw, 10)
-                                        if (!Number.isNaN(n) && n >= 1) inner[monthKey] = Math.min(9999, n)
-                                      }
-                                      const next = { ...prev }
-                                      if (Object.keys(inner).length === 0) delete next[mat]
-                                      else next[mat] = inner
-                                      return next
-                                    })
-                                  }}
-                                  onBlur={() => {
-                                    setTimeout(() => void persistGoalPacing(), 0)
-                                  }}
-                                />
-                                <span className="text-[11px] font-bold text-gray-600">ページ</span>
-                              </label>
+                              <p className="text-2xl sm:text-3xl font-black leading-tight tabular-nums">
+                                {monthNum}月
+                              </p>
                             </div>
-                          )
-                        })}
-                        <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-2.5">
-                          <p className="text-[11px] font-black text-indigo-900 mb-1">{monthKey} のメモ</p>
-                          <textarea
-                            value={monthMemos[monthKey] ?? ''}
-                            onChange={e =>
-                              setMonthMemos(prev => ({ ...prev, [monthKey]: e.target.value }))
-                            }
-                            rows={2}
-                            className="w-full bg-white rounded-lg p-2 text-xs font-bold outline-none border border-indigo-100"
-                            placeholder="自由に書いてOK"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => void saveMonthMemo(monthKey)}
-                            disabled={savingMonthKey === monthKey}
-                            className="mt-2 w-full py-2 bg-indigo-600 text-white rounded-lg font-black text-xs disabled:opacity-50"
-                          >
-                            {savingMonthKey === monthKey ? '保存中…' : 'この月のメモを保存'}
-                          </button>
+                            <span className="shrink-0 rounded-full bg-white/20 backdrop-blur-sm px-2.5 py-1 text-[11px] font-black tabular-nums border border-white/30">
+                              {monthIndex + 1} / {totalMonths}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-bold text-white/85 mt-1 opacity-95">
+                            この月ブロックの終わりまでに到達するページ（累積）
+                          </p>
+                        </header>
+                        <div className="pl-3 sm:pl-4 pr-3 py-3 space-y-3 bg-gradient-to-b from-white to-slate-50/80">
+                          {bigFocusMaterials.map(mat => {
+                            const total = materialPageTotals[mat] ?? 0
+                            const cur = monthPageTargets[mat]?.[monthKey]
+                            return (
+                              <div
+                                key={`${monthKey}-${mat}`}
+                                className="rounded-xl bg-white border border-emerald-100/90 p-3 shadow-sm"
+                              >
+                                <p className="text-[11px] font-black text-gray-900 truncate" title={mat}>
+                                  {mat}
+                                </p>
+                                <p className="text-[10px] text-gray-500 mt-0.5 font-bold">全{total > 0 ? total : '—'}ページ</p>
+                                <label className="flex items-center gap-2 mt-2 flex-wrap">
+                                  <span className="text-[11px] font-bold text-gray-700 whitespace-nowrap">
+                                    この月の終わりまで
+                                  </span>
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    className="flex-1 min-w-[4rem] max-w-[120px] p-2 rounded-lg border-2 border-emerald-200/80 font-black text-center text-sm tabular-nums focus:border-emerald-400 focus:ring-1 focus:ring-emerald-300 outline-none"
+                                    placeholder="ページ"
+                                    value={cur !== undefined ? String(cur) : ''}
+                                    onChange={e => {
+                                      const raw = e.target.value.replace(/\D/g, '').slice(0, 4)
+                                      setMonthPageTargets(prev => {
+                                        const inner = { ...(prev[mat] || {}) }
+                                        if (raw === '') {
+                                          delete inner[monthKey]
+                                        } else {
+                                          const n = parseInt(raw, 10)
+                                          if (!Number.isNaN(n) && n >= 1) inner[monthKey] = Math.min(9999, n)
+                                        }
+                                        const next = { ...prev }
+                                        if (Object.keys(inner).length === 0) delete next[mat]
+                                        else next[mat] = inner
+                                        return next
+                                      })
+                                    }}
+                                    onBlur={() => {
+                                      setTimeout(() => void persistGoalPacing(), 0)
+                                    }}
+                                  />
+                                  <span className="text-[11px] font-bold text-gray-600">ページ</span>
+                                </label>
+                              </div>
+                            )
+                          })}
+                          <div className="rounded-xl border border-indigo-200/80 bg-indigo-50/60 p-3">
+                            <p className="text-[11px] font-black text-indigo-900 mb-1.5 flex items-center gap-1.5">
+                              <span aria-hidden>📝</span>
+                              {yy}年{monthNum}月のメモ
+                            </p>
+                            <textarea
+                              value={monthMemos[monthKey] ?? ''}
+                              onChange={e =>
+                                setMonthMemos(prev => ({ ...prev, [monthKey]: e.target.value }))
+                              }
+                              rows={2}
+                              className="w-full bg-white rounded-lg p-2.5 text-xs font-bold outline-none border border-indigo-100 focus:ring-2 focus:ring-indigo-200"
+                              placeholder="この月の意気込み・メモ（任意）"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void saveMonthMemo(monthKey)}
+                              disabled={savingMonthKey === monthKey}
+                              className="mt-2 w-full py-2 rounded-lg border-2 border-indigo-300 bg-indigo-600 text-white font-black text-xs hover:bg-indigo-700 active:scale-[0.99] transition disabled:opacity-50"
+                            >
+                              {savingMonthKey === monthKey ? '保存中…' : 'メモを保存'}
+                            </button>
+                          </div>
                         </div>
-                      </div>
+                      </article>
                     )
                   })}
                 </div>
