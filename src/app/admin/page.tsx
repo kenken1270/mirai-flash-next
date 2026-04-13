@@ -23,7 +23,7 @@ export default function AdminPage() {
   
   // 選択・管理用ステート
   const [selectedMaterial, setSelectedMaterial] = useState<string | null>(null)
-  const [subTab, setSubTab] = useState<'page' | 'common'>('page')
+  const [subTab, setSubTab] = useState<'page' | 'common' | 'toc'>('page')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [isAdding, setIsAdding] = useState(false)
   const [form, setForm] = useState({
@@ -157,7 +157,7 @@ export default function AdminPage() {
                       <p className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Editing Material</p>
                       <h2 className="text-2xl font-black text-slate-800">{selectedMaterial}</h2>
                     </div>
-                    <button onClick={() => {setIsAdding(true); setEditingId(null); setForm({material_name: selectedMaterial, page_no:'', video_url:'', explanation:'', hint_text:'', resource_type: subTab, image_url:''})}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition shrink-0">＋ 新規追加</button>
+                    <button type="button" onClick={() => {setIsAdding(true); setEditingId(null); setForm({material_name: selectedMaterial, page_no:'', video_url:'', explanation:'', hint_text:'', resource_type: subTab, image_url:''})}} className="bg-indigo-600 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-md active:scale-95 transition shrink-0">＋ 新規追加</button>
                   </div>
 
                   <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4 space-y-2">
@@ -190,21 +190,22 @@ export default function AdminPage() {
                   </div>
 
                   {/* サブタブ切替 */}
-                  <div className="flex border-b border-slate-200 gap-8">
-                    <button onClick={() => setSubTab('page')} className={`pb-3 text-sm font-black transition-all ${subTab==='page' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>📖 ページ別解説</button>
-                    <button onClick={() => setSubTab('common')} className={`pb-3 text-sm font-black transition-all ${subTab==='common' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>🛡️ 共通保管庫</button>
+                  <div className="flex border-b border-slate-200 gap-6 flex-wrap">
+                    <button type="button" onClick={() => setSubTab('page')} className={`pb-3 text-sm font-black transition-all ${subTab==='page' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>📖 ページ別解説</button>
+                    <button type="button" onClick={() => setSubTab('common')} className={`pb-3 text-sm font-black transition-all ${subTab==='common' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>🛡️ 共通保管庫</button>
+                    <button type="button" onClick={() => setSubTab('toc')} className={`pb-3 text-sm font-black transition-all ${subTab==='toc' ? 'border-b-2 border-indigo-600 text-indigo-600' : 'text-slate-400'}`}>📑 目次（TOC）</button>
                   </div>
 
                   {/* 編集フォーム（モーダル風表示） */}
                   {(isAdding || editingId) && (
                     <div className="bg-white p-6 rounded-3xl border-2 border-indigo-100 shadow-xl space-y-4 animate-in slide-in-from-top-4">
                       <div className="grid grid-cols-2 gap-4">
-                        <input value={form.page_no} onChange={e => setForm({...form, page_no: e.target.value})} placeholder={subTab==='page' ? "ページ番号 (例: p.6)" : "保管庫の名前 (例: 五十音図)"} className="bg-slate-50 border-none rounded-xl p-3 text-sm" />
+                        <input value={form.page_no} onChange={e => setForm({...form, page_no: e.target.value})} placeholder={subTab==='page' ? "ページ番号 (例: p.6)" : subTab==='toc' ? "目次の開始ページ（例: 25）" : "保管庫の名前 (例: 五十音図)"} className="bg-slate-50 border-none rounded-xl p-3 text-sm" />
                         <input value={form.video_url} onChange={e => setForm({...form, video_url: e.target.value})} placeholder="YouTube URL" className="bg-slate-50 border-none rounded-xl p-3 text-sm" />
                       </div>
                       <input value={form.image_url} onChange={e => setForm({...form, image_url: e.target.value})} placeholder="画像URL (Public URL)" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm" />
-                      <input value={form.hint_text} onChange={e => setForm({...form, hint_text: e.target.value})} placeholder="一言アドバイス" className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm" />
-                      <textarea value={form.explanation} onChange={e => setForm({...form, explanation: e.target.value})} rows={subTab==='common' ? 3 : 6} placeholder={subTab==='common' ? "保管庫の概要（空でもOK）" : "詳しい解説内容"} className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm"></textarea>
+                      <input value={form.hint_text} onChange={e => setForm({...form, hint_text: e.target.value})} placeholder={subTab==='toc' ? 'JSONメタ（例: {"depth":2,"seq":1}）' : '一言アドバイス'} className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm" />
+                      <textarea value={form.explanation} onChange={e => setForm({...form, explanation: e.target.value})} rows={subTab==='common' ? 3 : 6} placeholder={subTab==='common' ? "保管庫の概要（空でもOK）" : subTab==='toc' ? "見出しタイトル（例: 第1章 文法体系①）" : "詳しい解説内容"} className="w-full bg-slate-50 border-none rounded-xl p-3 text-sm"></textarea>
                       <div className="flex gap-3">
                         <button onClick={() => {setIsAdding(false); setEditingId(null)}} className="flex-1 py-3 bg-slate-100 text-slate-500 rounded-2xl font-bold">キャンセル</button>
                         <button onClick={handleSave} className="flex-1 py-3 bg-indigo-600 text-white rounded-2xl font-black shadow-lg">保存する</button>
@@ -217,13 +218,17 @@ export default function AdminPage() {
                     {filteredResources.map(res => (
                       <div key={res.id} onClick={() => {setEditingId(res.id); setForm({...res, image_url: res.image_url||''}); setIsAdding(false)}} className="bg-white p-4 rounded-2xl border border-slate-200 hover:border-indigo-300 hover:shadow-md transition cursor-pointer group">
                         <div className="flex justify-between items-start mb-2">
-                          <h4 className="font-black text-slate-800">{res.page_no || 'No Title'}</h4>
+                          <h4 className="font-black text-slate-800 line-clamp-2">
+                            {subTab === 'toc' ? (res.explanation || res.page_no) : (res.page_no || 'No Title')}
+                          </h4>
                           <div className="flex gap-1 text-xs">
                             {res.video_url && <span>📺</span>}
                             {res.image_url && <span>🖼️</span>}
                           </div>
                         </div>
-                        <p className="text-xs text-slate-400 line-clamp-2 italic">{res.hint_text || 'No hint'}</p>
+                        <p className="text-xs text-slate-400 line-clamp-2 italic">
+                          {subTab === 'toc' ? `p.${res.page_no}` : (res.hint_text || 'No hint')}
+                        </p>
                       </div>
                     ))}
                   </div>

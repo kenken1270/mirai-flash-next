@@ -26,6 +26,7 @@
 ### learning_resources
 
 - 教材キーでの紐付け、解説テキスト、動画URL、画像。
+- **`resource_type`:** `page`（ページ別解説）、`common`（共通）、`toc`（目次・構造のみ。`explanation` に見出し、`hint_text` に `{"depth":1〜4,"seq":n}` JSON）。
 - **解説の多言語:** `[:ja]...[:zh]...` のような区切り形式を**壊さない**（パース前提のUIがある場合がある）。
 - **`material_total_pages`（任意）:** 教科書の総ページ数。管理画面で教材ごとに設定すると、計画の「量の目安」は登録ページ数ではなくこの値を優先して使う。未設定時は `resource_type: page` の `page_no` の種類数で集計。
 
