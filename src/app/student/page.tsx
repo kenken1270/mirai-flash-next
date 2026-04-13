@@ -99,6 +99,8 @@ export default function StudentHomePage() {
   const doneCount = todayTasks.filter(t => t.is_done === 1).length
   const progress = todayTasks.length > 0 ? Math.round((doneCount / todayTasks.length) * 100) : 0
   const expPts = user?.current_points ?? 0
+  /** 表示用レベル（0 EXP なら 1）。DB の grade_num（学年など）とは別 */
+  const displayLevel = Math.floor(expPts / EXP_BAR_SEGMENT) + 1
   const expBarPct = EXP_BAR_SEGMENT > 0
     ? Math.min(100, Math.round(((expPts % EXP_BAR_SEGMENT) / EXP_BAR_SEGMENT) * 100))
     : 0
@@ -137,7 +139,9 @@ export default function StudentHomePage() {
         <div className="w-14 h-14 bg-yellow-100 rounded-full flex items-center justify-center text-3xl shadow-inner">🐶</div>
         <div className="flex-1">
           <h2 className="font-black text-base text-gray-700">{user?.nickname || user?.username} さん</h2>
-          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Level {user?.grade_num || 1} · {user?.current_points || 0} EXP</p>
+          <p className="text-[10px] text-gray-500 font-bold tracking-wide">
+            レベル {displayLevel} · {expPts} EXP
+          </p>
           <div className="h-1.5 w-full bg-gray-50 rounded-full mt-2 overflow-hidden border border-gray-100">
             <div className="h-full bg-yellow-400 transition-all duration-500" style={{ width: `${expBarPct}%` }}></div>
           </div>

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { getUsernameFromSession } from '@/lib/auth-user'
@@ -8,6 +8,68 @@ type ContentRow = { id: number; subject: string; content_type: string; title: st
 type Book = { id: number; title: string; subtitle: string; cover_emoji: string; category: string }
 type SetInfo = { id: number; book_id: number; lang1_label: string; lang2_label: string; lang1_tts_lang: string; lang2_tts_lang: string }
 type QuizResult = { id: number; score_pct: number; miss_count: number; total_count: number; correct_count: number; taken_at: string; stamp_earned: boolean; book_id: number }
+
+type PageGroupInfo = {
+  page_no: number
+  min_item: number
+  max_item: number
+  count: number
+  label: string
+}
+
+type RangeMeta = {
+  absMin: number
+  absMax: number
+  groups: PageGroupInfo[]
+}
+
+function buildRangeMeta(cards: { item_no: number; page_no: number | null; lang3: string | null }[]): RangeMeta | null {
+  if (!cards.length) return null
+  const absMin = Math.min(...cards.map(c => c.item_no))
+  const absMax = Math.max(...cards.map(c => c.item_no))
+  const byPage = new Map<number, { min: number; max: number; count: number; label: string }>()
+  for (const c of cards) {
+    const p = c.page_no ?? 0
+    if (!byPage.has(p)) {
+      byPage.set(p, { min: c.item_no, max: c.item_no, count: 0, label: '' })
+    }
+    const g = byPage.get(p)!
+    g.min = Math.min(g.min, c.item_no)
+    g.max = Math.max(g.max, c.item_no)
+    g.count++
+    if (!g.label && c.lang3?.trim()) g.label = c.lang3.trim().split('\n')[0].slice(0, 80)
+  }
+  for (const g of byPage.values()) {
+    if (!g.label) g.label = '（タイトルなし）'
+  }
+  const groups: PageGroupInfo[] = Array.from(byPage.entries())
+    .map(([page_no, v]) => ({
+      page_no,
+      min_item: v.min,
+      max_item: v.max,
+      count: v.count,
+      label: page_no === 0 ? `未分類（pageなし）` : v.label,
+    }))
+    .sort((a, b) => a.page_no - b.page_no)
+  return { absMin, absMax, groups }
+}
+
+function buildQuickNumberPresets(absMin: number, absMax: number): { label: string; s: number; e: number }[] {
+  const total = absMax - absMin + 1
+  const out: { label: string; s: number; e: number }[] = []
+  const steps = [15, 30, 50, 100, 200, 500, 1000]
+  for (const n of steps) {
+    if (n < total) out.push({ label: `先頭${n}問`, s: absMin, e: absMin + n - 1 })
+  }
+  out.push({ label: `全${total}問`, s: absMin, e: absMax })
+  const seen = new Set<string>()
+  return out.filter(r => {
+    const k = `${r.s}-${r.e}`
+    if (seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+}
 
 const SUBJECTS = ['国語', '算数', '理科', '社会']
 const SUBJECT_CONFIG: Record<string, { icon: string; color: string; bg: string }> = {
@@ -50,6 +112,14 @@ export default function TestPage() {
   const [strictness, setStrictness]     = useState<Strictness>('normal')
   const [loading, setLoading]           = useState(true)
 
+  const [rangeMeta, setRangeMeta]       = useState<RangeMeta | null>(null)
+  const [rangeLoading, setRangeLoading] = useState(false)
+  const [rangeMode, setRangeMode]       = useState<'chapter' | 'numbers'>('chapter')
+  const [layerStartPage, setLayerStartPage] = useState(0)
+  const [layerEndPage, setLayerEndPage]     = useState(0)
+  const [questionPickMode, setQuestionPickMode] = useState<'all' | 'random'>('all')
+  const [randomQuestionCount, setRandomQuestionCount] = useState('20')
+
   useEffect(() => {
     async function init() {
       const { data: { session } } = await supabase.auth.getSession()
@@ -70,6 +140,68 @@ export default function TestPage() {
     }
     init()
   }, [router])
+
+  useEffect(() => {
+    if (!selectedBook) {
+      setRangeMeta(null)
+      return
+    }
+    const bookId = selectedBook.id
+    let cancelled = false
+    async function loadRange() {
+      setRangeLoading(true)
+      setRangeMeta(null)
+      const { data: bookSets } = await supabase.from('flashcard_sets').select('id').eq('book_id', bookId)
+      const setIds = bookSets?.map(s => s.id) ?? []
+      if (!setIds.length) {
+        if (!cancelled) {
+          setRangeMeta(null)
+          setRangeLoading(false)
+        }
+        return
+      }
+      const { data: cards } = await supabase
+        .from('flashcards_v3')
+        .select('item_no, page_no, lang3')
+        .in('set_id', setIds)
+        .order('item_no')
+      if (cancelled) return
+      const meta = cards?.length ? buildRangeMeta(cards as { item_no: number; page_no: number | null; lang3: string | null }[]) : null
+      setRangeMeta(meta)
+      setRangeLoading(false)
+      if (meta?.groups.length) {
+        const g0 = meta.groups[0]
+        setLayerStartPage(g0.page_no)
+        setLayerEndPage(g0.page_no)
+        setItemStart(String(g0.min_item))
+        setItemEnd(String(g0.max_item))
+        setRangeMode('chapter')
+      } else if (meta) {
+        setItemStart(String(meta.absMin))
+        setItemEnd(String(Math.min(meta.absMin + 14, meta.absMax)))
+        setRangeMode('numbers')
+      }
+    }
+    void loadRange()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedBook?.id])
+
+  const applyLayerRange = (startP: number, endP: number) => {
+    if (!rangeMeta?.groups.length) return
+    const lo = Math.min(startP, endP)
+    const hi = Math.max(startP, endP)
+    const inRange = rangeMeta.groups.filter(g => g.page_no >= lo && g.page_no <= hi)
+    if (!inRange.length) return
+    setItemStart(String(Math.min(...inRange.map(g => g.min_item))))
+    setItemEnd(String(Math.max(...inRange.map(g => g.max_item))))
+  }
+
+  const numberPresets = useMemo(
+    () => (rangeMeta ? buildQuickNumberPresets(rangeMeta.absMin, rangeMeta.absMax) : []),
+    [rangeMeta],
+  )
 
   const bookSets     = sets.filter(s => s.book_id === selectedBook?.id)
   const firstSet     = bookSets[0]
@@ -93,17 +225,28 @@ export default function TestPage() {
   const avgScore      = totalTests > 0 ? Math.round(quizHistory.reduce((s, r) => s + r.score_pct, 0) / totalTests) : 0
   const totalAnswered = quizHistory.reduce((s, r) => s + r.total_count, 0)
   const recentScores  = [...quizHistory].reverse().slice(-8)
-  const QUICK_RANGES  = [[1,15],[1,30],[1,50],[1,100]]
   const startNum      = parseInt(itemStart) || 1
   const endNum        = parseInt(itemEnd)   || startNum
   const questionCount = Math.max(0, endNum - startNum + 1)
+  const rangeSpan     = Math.max(1, questionCount)
+  const randomN       = Math.min(Math.max(1, parseInt(randomQuestionCount, 10) || 20), rangeSpan)
+  const effectiveQuizCount = questionPickMode === 'all' ? questionCount : randomN
 
   function handleStart() {
     if (!selectedBook) return
+    let s = startNum
+    let e = endNum
+    if (rangeMeta) {
+      s = Math.max(rangeMeta.absMin, Math.min(s, rangeMeta.absMax))
+      e = Math.max(rangeMeta.absMin, Math.min(e, rangeMeta.absMax))
+      if (e < s) [s, e] = [e, s]
+    }
+    const span = Math.max(1, e - s + 1)
+    const pick = Math.min(Math.max(1, parseInt(randomQuestionCount, 10) || 20), span)
     const params = new URLSearchParams({
       book_id:     String(selectedBook.id),
-      item_start:  String(startNum),
-      item_end:    String(endNum),
+      item_start:  String(s),
+      item_end:    String(e),
       mode:        quizMode,
       direction,
       lang1_label: lang1Label,
@@ -112,6 +255,7 @@ export default function TestPage() {
       lang2_tts:   lang2TtsLang,
       strictness,
     })
+    if (questionPickMode === 'random') params.set('question_count', String(pick))
     router.push('/flash/quiz?' + params.toString())
   }
 
@@ -190,7 +334,7 @@ export default function TestPage() {
                   const d2 = getLangDisplay(s?.lang2_label ?? '', s?.lang2_tts_lang ?? '')
                   return (
                     <button key={book.id}
-                      onClick={() => { setSelectedBook(book); setItemStart('1'); setItemEnd('15'); setDirection('lang1to2') }}
+                      onClick={() => { setSelectedBook(book); setDirection('lang1to2') }}
                       className={`w-full flex items-center gap-3 p-3 rounded-xl border transition text-left
                         ${selectedBook?.id === book.id ? 'bg-purple-50 border-purple-400' : 'bg-gray-50 border-gray-200 hover:border-gray-300'}`}>
                       <span className="text-2xl">{book.cover_emoji}</span>
@@ -210,33 +354,222 @@ export default function TestPage() {
 
             {/* ② 出題範囲 */}
             <div>
-              <p className="text-sm font-bold text-gray-600 mb-2">🎯 出題範囲（単語番号）</p>
-              <div className="flex items-center gap-2 mb-2">
+              <p className="text-sm font-bold text-gray-600 mb-2">🎯 出題範囲</p>
+              {rangeLoading && (
+                <p className="text-xs text-gray-400 py-2">教材の単語一覧を読み込み中…</p>
+              )}
+              {!rangeLoading && !rangeMeta && selectedBook && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2 mb-2">
+                  この教材に単語データが見つかりません。番号を直接指定してください。
+                </p>
+              )}
+              {rangeMeta && (
+                <p className="text-xs text-gray-500 mb-2">
+                  教材内の番号: <span className="font-bold text-gray-700">{rangeMeta.absMin}</span>
+                  〜<span className="font-bold text-gray-700">{rangeMeta.absMax}</span>
+                  （全{rangeMeta.absMax - rangeMeta.absMin + 1}問分）
+                </p>
+              )}
+
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setRangeMode('chapter')}
+                  disabled={!rangeMeta?.groups.length}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition
+                    ${rangeMode === 'chapter' ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}
+                    disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  📑 ブロックから選ぶ
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRangeMode('numbers')}
+                  disabled={!rangeMeta}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition
+                    ${rangeMode === 'numbers' ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}
+                    disabled:opacity-40 disabled:cursor-not-allowed`}
+                >
+                  🔢 番号で指定
+                </button>
+              </div>
+
+              {rangeMode === 'chapter' && rangeMeta && rangeMeta.groups.length > 0 && (
+                <div className="space-y-3 mb-3">
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <label className="text-xs text-gray-500 sm:w-10">開始</label>
+                    <select
+                      value={layerStartPage}
+                      onChange={e => {
+                        const v = Number(e.target.value)
+                        setLayerStartPage(v)
+                        applyLayerRange(v, layerEndPage)
+                      }}
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-medium focus:border-purple-400 outline-none bg-white"
+                    >
+                      {rangeMeta.groups.map(g => (
+                        <option key={g.page_no} value={g.page_no}>
+                          {g.page_no === 0 ? '— ' : `P${g.page_no} `}
+                          {g.label}（No.{g.min_item}〜{g.max_item}）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
+                    <label className="text-xs text-gray-500 sm:w-10">終了</label>
+                    <select
+                      value={layerEndPage}
+                      onChange={e => {
+                        const v = Number(e.target.value)
+                        setLayerEndPage(v)
+                        applyLayerRange(layerStartPage, v)
+                      }}
+                      className="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm font-medium focus:border-purple-400 outline-none bg-white"
+                    >
+                      {rangeMeta.groups.map(g => (
+                        <option key={g.page_no} value={g.page_no}>
+                          {g.page_no === 0 ? '— ' : `P${g.page_no} `}
+                          {g.label}（No.{g.min_item}〜{g.max_item}）
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-400">ブロックは教材の「ページ／章」単位です。ラベルは各ブロック先頭の説明（教材によってはひらがな・カタカナなど）です。</p>
+                  <div className="grid gap-2 max-h-48 overflow-y-auto pr-1">
+                    {rangeMeta.groups.map(g => {
+                      const active =
+                        g.page_no >= Math.min(layerStartPage, layerEndPage) &&
+                        g.page_no <= Math.max(layerStartPage, layerEndPage)
+                      return (
+                        <button
+                          type="button"
+                          key={g.page_no}
+                          onClick={() => {
+                            setLayerStartPage(g.page_no)
+                            setLayerEndPage(g.page_no)
+                            applyLayerRange(g.page_no, g.page_no)
+                          }}
+                          className={`text-left rounded-xl border px-3 py-2 transition
+                            ${active ? 'border-purple-400 bg-purple-50' : 'border-gray-200 bg-gray-50 hover:border-gray-300'}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="font-bold text-sm text-gray-800 line-clamp-2">{g.label}</span>
+                            <span className="text-xs text-gray-400 flex-shrink-0">
+                              {g.page_no === 0 ? '—' : `P${g.page_no}`}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            No.{g.min_item}〜{g.max_item} · {g.count}枚
+                          </p>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 mb-2 flex-wrap">
+                <span className="text-xs text-gray-500 w-full sm:w-auto">出題番号</span>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={itemStart}
-                  onChange={e => setItemStart(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={e => {
+                    setRangeMode('numbers')
+                    setItemStart(e.target.value.replace(/[^0-9]/g, ''))
+                  }}
                   className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-sm focus:border-purple-400 outline-none" />
                 <span className="text-gray-400 font-bold">〜</span>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={itemEnd}
-                  onChange={e => setItemEnd(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={e => {
+                    setRangeMode('numbers')
+                    setItemEnd(e.target.value.replace(/[^0-9]/g, ''))
+                  }}
                   className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-sm focus:border-purple-400 outline-none" />
                 <span className="text-gray-500 text-sm">番</span>
               </div>
-              <div className="flex gap-2 flex-wrap">
-                {QUICK_RANGES.map(([s, e]) => (
-                  <button key={`${s}-${e}`}
-                    onClick={() => { setItemStart(String(s)); setItemEnd(String(e)) }}
-                    className={`text-xs px-3 py-1.5 rounded-full border font-bold transition
-                      ${startNum === s && endNum === e ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}>
-                    {s}〜{e}番
-                  </button>
-                ))}
+
+              {rangeMode === 'numbers' && rangeMeta && numberPresets.length > 0 && (
+                <div className="flex gap-2 flex-wrap">
+                  {numberPresets.map(({ label, s, e }) => (
+                    <button
+                      key={`${label}-${s}-${e}`}
+                      type="button"
+                      onClick={() => {
+                        setItemStart(String(s))
+                        setItemEnd(String(e))
+                      }}
+                      className={`text-xs px-3 py-1.5 rounded-full border font-bold transition
+                        ${startNum === s && endNum === e ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
+                    >
+                      {label}
+                      <span className="opacity-80 font-normal">（{s}〜{e}）</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ②b 出題数（範囲内ランダム） */}
+            <div>
+              <p className="text-sm font-bold text-gray-600 mb-2">🔢 出題数</p>
+              <p className="text-xs text-gray-500 mb-2">上で選んだ範囲の中から、出す問題数を決めます（ランダムは毎回シャッフル）。</p>
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setQuestionPickMode('all')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition
+                    ${questionPickMode === 'all' ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                >
+                  範囲の全問
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuestionPickMode('random')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition
+                    ${questionPickMode === 'random' ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                >
+                  ランダムで
+                </button>
               </div>
+              {questionPickMode === 'random' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={randomQuestionCount}
+                      onChange={e => setRandomQuestionCount(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-sm focus:border-purple-400 outline-none"
+                      aria-label="ランダム出題数"
+                    />
+                    <span className="text-sm text-gray-600">問</span>
+                    <span className="text-xs text-gray-400">（最大 {rangeSpan} 問）</span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {[10, 20, 30, 50, 100].map(n => {
+                      const tooBig = n > rangeSpan
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setRandomQuestionCount(String(Math.min(n, rangeSpan)))}
+                          disabled={tooBig}
+                          className={`text-xs px-3 py-1.5 rounded-full border font-bold transition
+                            ${tooBig ? 'opacity-40 cursor-not-allowed border-gray-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
+                        >
+                          {n}問
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="border-t border-gray-100" />
@@ -306,7 +639,7 @@ export default function TestPage() {
             {/* テスト開始ボタン */}
             <button onClick={handleStart} disabled={!selectedBook}
               className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-4 rounded-2xl font-bold text-lg shadow-md hover:opacity-90 transition disabled:opacity-40">
-              🚀 テスト開始！（{questionCount}問）
+              🚀 テスト開始！（{effectiveQuizCount}問）
             </button>
           </div>
         </div>

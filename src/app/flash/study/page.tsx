@@ -4,6 +4,12 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { useEffect, useState, useCallback, Suspense } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { getUsernameFromSession } from '@/lib/auth-user'
+import {
+  resolveStudyFrontSpeech,
+  readTtsReadModeFromStorage,
+  STUDY_TTS_MODE_STORAGE_KEY,
+  type TtsReadMode,
+} from '@/lib/flash-kana-tts'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,6 +62,7 @@ function StudyContent() {
   const setName = decodeURIComponent(searchParams.get('setName') ?? '')
   const startNo = Number(searchParams.get('start') ?? 1)
   const endNo   = Number(searchParams.get('end')   ?? 9999)
+  const questionLimit = parseInt(searchParams.get('question_count') ?? '0', 10)
 
   const [username,   setUsername]   = useState('')
   const [queue,      setQueue]      = useState<Card[]>([])
@@ -71,6 +78,16 @@ function StudyContent() {
   const [ttsLang1,   setTtsLang1]   = useState('en-US')
   const [ttsLang2,   setTtsLang2]   = useState('ja-JP')
   const [autoSpeak,  setAutoSpeak]  = useState(true)
+  const [ttsReadMode, setTtsReadMode] = useState<TtsReadMode>('kana')
+
+  useEffect(() => {
+    setTtsReadMode(readTtsReadModeFromStorage())
+  }, [])
+
+  const persistTtsReadMode = useCallback((m: TtsReadMode) => {
+    setTtsReadMode(m)
+    if (typeof window !== 'undefined') localStorage.setItem(STUDY_TTS_MODE_STORAGE_KEY, m)
+  }, [])
 
   useEffect(() => {
     async function init() {
@@ -83,11 +100,13 @@ function StudyContent() {
         .select('id,item_no,lang1,lang1_sub,lang2,lang2_sub,lang3,lang3_sub,set_id')
         .order('item_no')
 
+      let setIdsForBook: number[] = []
       if (bookId) {
         const { data: sets } = await supabase
           .from('flashcard_sets').select('id').eq('book_id', bookId)
-        if (sets && sets.length > 0) {
-          query = query.in('set_id', sets.map((s: { id: number }) => s.id))
+        setIdsForBook = sets?.map((s: { id: number }) => s.id) ?? []
+        if (setIdsForBook.length > 0) {
+          query = query.in('set_id', setIdsForBook)
         }
       } else if (setId) {
         query = query.eq('set_id', setId)
@@ -98,8 +117,12 @@ function StudyContent() {
 
       const cardsRes = await query
       const logsRes  = await supabase.from('review_logs').select('*').eq('username', uname)
-      const setRes   = await supabase.from('flashcard_sets')
-        .select('lang1_label,lang2_label').eq('id', setId).limit(1)
+
+      const labelSetId = setId || setIdsForBook[0] || 0
+      const setRes = labelSetId
+        ? await supabase.from('flashcard_sets')
+            .select('lang1_label,lang2_label').eq('id', labelSetId).limit(1)
+        : { data: null }
       const userRes  = await supabase.from('users')
         .select('base_daily_limit').eq('username', uname).limit(1)
 
@@ -138,11 +161,15 @@ function StudyContent() {
         }
       }
 
+      if (questionLimit > 0 && Number.isFinite(questionLimit)) {
+        studyQueue = studyQueue.slice(0, Math.min(questionLimit, studyQueue.length))
+      }
+
       setQueue(studyQueue)
       setLoading(false)
     }
     init()
-  }, [setId, bookId, startNo, endNo, router])
+  }, [setId, bookId, startNo, endNo, questionLimit, router])
 
   const speak = useCallback((text: string, lang: string) => {
     if (!text || typeof window === 'undefined' || !window.speechSynthesis) return
@@ -158,11 +185,12 @@ function StudyContent() {
     if (!loading && autoSpeak && queue.length > 0 && !showAnswer && phase === 'study') {
       const card = queue[current]
       if (card) {
-        const t = setTimeout(() => speak(card.lang1, ttsLang1), 400)
+        const { text, lang } = resolveStudyFrontSpeech(lang1Label, lang2Label, card, ttsReadMode, ttsLang1)
+        const t = setTimeout(() => speak(text, lang), 400)
         return () => clearTimeout(t)
       }
     }
-  }, [current, loading, autoSpeak, showAnswer, phase, queue, speak, ttsLang1])
+  }, [current, loading, autoSpeak, showAnswer, phase, queue, speak, lang1Label, lang2Label, ttsReadMode, ttsLang1])
 
   const handleQuality = useCallback(async (quality: number) => {
     if (saving) return
@@ -341,7 +369,6 @@ function StudyContent() {
   // 学習画面
   const card     = queue[current]
   const progress = Math.round((current / queue.length) * 100)
-
   return (
     <div className="min-h-screen bg-[#FFFDF0] flex flex-col">
       {/* ヘッダー */}
@@ -364,6 +391,42 @@ function StudyContent() {
         <div className="bg-yellow-400 h-2 transition-all duration-500" style={{ width: `${progress}%` }} />
       </div>
 
+      {/* 読み上げモード（ローマ字の英語読みを避ける／表示どおりを試す） */}
+      <div className="max-w-lg mx-auto w-full px-4 pt-3 pb-1">
+        <div className="flex flex-wrap items-center gap-2 bg-white/90 rounded-2xl border border-yellow-200 px-3 py-2 shadow-sm">
+          <span className="text-[11px] text-gray-500 font-bold whitespace-nowrap">🔊 読み方</span>
+          <div className="flex flex-wrap gap-1.5 flex-1 justify-end sm:justify-start">
+            {(
+              [
+                { key: 'kana' as const, label: 'かなの音' },
+                { key: 'auto' as const, label: '自動' },
+                { key: 'literal' as const, label: '表示のまま' },
+              ]
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => persistTtsReadMode(key)}
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-bold transition ${
+                  ttsReadMode === key
+                    ? 'bg-yellow-400 text-gray-900 shadow-sm'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <p className="text-[10px] text-gray-400 mt-1 px-1 leading-relaxed">
+          {ttsReadMode === 'literal'
+            ? '「表示のまま」はローマ字を英語に近い音で読みます（が→ジーエー など）。'
+            : ttsReadMode === 'kana'
+              ? '「かなの音」は日本語の読みです（が→が）。英語教材では自動に切り替わります。'
+              : '「自動」は教材ラベルと分類から推測します。ずれるときは「かなの音」へ。'}
+        </p>
+      </div>
+
       {/* カード */}
       <div className="flex-1 flex flex-col items-center justify-center p-5 gap-4">
         <div className="w-full max-w-lg">
@@ -375,10 +438,29 @@ function StudyContent() {
             {card.lang1_sub && (
               <p className="text-base text-yellow-600 font-mono">{card.lang1_sub}</p>
             )}
-            <button onClick={() => speak(card.lang1, ttsLang1)}
-              className="mt-1 w-10 h-10 rounded-full bg-yellow-100 hover:bg-yellow-200 flex items-center justify-center transition">
-              <span className="text-lg">🔊</span>
-            </button>
+            <p className="text-[10px] text-gray-400 text-center max-w-xs leading-relaxed">
+              {card.lang2?.trim()
+                ? '🔊 は「ローマ字」と「かな」から選べます。上の「読み方」は自動再生のみに効きます。'
+                : '🔊 で表面を読み上げます。'}
+            </p>
+            <div className="flex gap-2 flex-wrap justify-center mt-1">
+              <button
+                type="button"
+                onClick={() => speak(card.lang1, ttsLang1)}
+                className="flex items-center gap-1 px-4 py-2 bg-yellow-200 hover:bg-yellow-300 rounded-full text-sm font-bold text-yellow-900 transition"
+              >
+                🔊 {lang1Label}
+              </button>
+              {card.lang2?.trim() && (
+                <button
+                  type="button"
+                  onClick={() => speak(card.lang2, ttsLang2)}
+                  className="flex items-center gap-1 px-4 py-2 bg-yellow-100 hover:bg-yellow-200 rounded-full text-sm font-bold text-yellow-800 transition"
+                >
+                  🔊 {lang2Label}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* 答え表示エリア */}
@@ -419,13 +501,19 @@ function StudyContent() {
                   <p className="text-sm text-gray-500 text-center italic">{card.lang3}</p>
                 </div>
               )}
-              <div className="flex gap-3 mt-1">
-                <button onClick={() => speak(card.lang1, ttsLang1)}
-                  className="flex items-center gap-1 px-4 py-2 bg-yellow-200 hover:bg-yellow-300 rounded-full text-sm font-bold text-yellow-800 transition">
+              <div className="flex gap-3 mt-1 flex-wrap justify-center">
+                <button
+                  type="button"
+                  onClick={() => speak(card.lang1, ttsLang1)}
+                  className="flex items-center gap-1 px-4 py-2 bg-yellow-200 hover:bg-yellow-300 rounded-full text-sm font-bold text-yellow-800 transition"
+                >
                   🔊 {lang1Label}
                 </button>
-                <button onClick={() => speak(card.lang2, ttsLang2)}
-                  className="flex items-center gap-1 px-4 py-2 bg-yellow-100 hover:bg-yellow-200 rounded-full text-sm font-bold text-yellow-700 transition">
+                <button
+                  type="button"
+                  onClick={() => speak(card.lang2, ttsLang2)}
+                  className="flex items-center gap-1 px-4 py-2 bg-yellow-100 hover:bg-yellow-200 rounded-full text-sm font-bold text-yellow-700 transition"
+                >
                   🔊 {lang2Label}
                 </button>
               </div>

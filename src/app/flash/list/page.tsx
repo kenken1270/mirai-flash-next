@@ -3,6 +3,7 @@
 import { useSearchParams, useRouter } from 'next/navigation'
 import { useEffect, useState, Suspense } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { ttsLangForLang1Label } from '@/lib/flash-kana-tts'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +13,15 @@ const supabase = createClient(
 type Card = {
   id: number; item_no: number; lang1: string; lang1_sub: string; lang2: string; 
   lang2_sub: string; lang3: string; lang3_sub: string; difficulty: number;
+}
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
 }
 
 function RedBlock({ text, hidden, onReveal, isFullWidth = false }: { text: string; hidden: boolean; onReveal: () => void; isFullWidth?: boolean }) {
@@ -30,6 +40,7 @@ function FlashListContent() {
   const setId = searchParams.get('id'); const bookId = searchParams.get('bookId');
   const setName = searchParams.get('setName') ?? '単語一覧';
   const start = Number(searchParams.get('start') ?? 1); const end = Number(searchParams.get('end') ?? 9999);
+  const questionCountLimit = parseInt(searchParams.get('question_count') ?? '0', 10);
 
   const [cards, setCards] = useState<Card[]>([]);
   const [bookInfo, setBookInfo] = useState({ lang1_label: '単語', lang2_label: '日本語' });
@@ -48,18 +59,50 @@ function FlashListContent() {
         const { data } = await supabase.from('flashcard_sets').select('book_id').eq('id', Number(setId)).single();
         if (data) resBookId = data.book_id;
       }
-      if (resBookId) {
-        const { data } = await supabase.from('flashcard_books').select('lang1_label, lang2_label').eq('id', resBookId).single();
-        if (data) setBookInfo({ lang1_label: data.lang1_label || '単語', lang2_label: data.lang2_label || '日本語' });
+      let lang1 = '単語'
+      let lang2 = '日本語'
+      if (setId) {
+        const { data: setRow } = await supabase
+          .from('flashcard_sets')
+          .select('lang1_label, lang2_label')
+          .eq('id', Number(setId))
+          .maybeSingle()
+        if (setRow) {
+          lang1 = setRow.lang1_label || lang1
+          lang2 = setRow.lang2_label || lang2
+        }
       }
+      if (resBookId) {
+        const { data } = await supabase.from('flashcard_books').select('lang1_label, lang2_label').eq('id', resBookId).maybeSingle()
+        if (data) {
+          if (!setId) {
+            lang1 = data.lang1_label || lang1
+            lang2 = data.lang2_label || lang2
+          } else {
+            if (!lang1) lang1 = data.lang1_label || lang1
+            if (!lang2) lang2 = data.lang2_label || lang2
+          }
+        }
+      }
+      setBookInfo({ lang1_label: lang1, lang2_label: lang2 })
       let query = supabase.from('flashcards_v3').select('*').gte('item_no', start).lte('item_no', end).order('item_no');
-      if (setId) query = query.eq('set_id', Number(setId));
+      if (setId) {
+        query = query.eq('set_id', Number(setId))
+      } else if (bookId) {
+        const { data: sets } = await supabase.from('flashcard_sets').select('id').eq('book_id', Number(bookId))
+        const ids = sets?.map(s => s.id) ?? []
+        if (ids.length) query = query.in('set_id', ids)
+      }
       const { data } = await query;
-      setCards(data ?? []);
+      let rows = (data ?? []) as Card[]
+      if (questionCountLimit > 0 && Number.isFinite(questionCountLimit)) {
+        rows = shuffle(rows).slice(0, Math.min(questionCountLimit, rows.length))
+      }
+      setCards(rows);
       setLoading(false);
     }
     fetchData();
-  }, [setId, bookId, start, end]);
+  }, [setId, bookId, start, end, questionCountLimit]);
 
   const isEnglish = bookInfo.lang1_label.includes('英') || bookInfo.lang1_label.includes('英語');
   const colOptions = [
@@ -70,10 +113,15 @@ function FlashListContent() {
     { key: 'lang3', label: '例文' },
   ];
 
-  const speak = (text: string) => {
-    const u = new window.SpeechSynthesisUtterance(text); u.lang = "en-US";
+  const speak = (text: string, lang: string) => {
+    window.speechSynthesis.cancel();
+    const u = new window.SpeechSynthesisUtterance(text);
+    u.lang = lang;
+    u.rate = 0.85;
     window.speechSynthesis.speak(u);
   };
+
+  const lang1Tts = ttsLangForLang1Label(bookInfo.lang1_label)
 
   const isHidden = (cardId: number, key: string) => {
     return redSheetMode && hideTargets.has(key) && !revealedCells.has(cardId + '_' + key);
@@ -141,8 +189,27 @@ function FlashListContent() {
               {visibleCols.has('lang1') && (
                 <div className="min-w-[100px] flex-1">
                   <p className="text-[10px] text-gray-400 font-bold">{bookInfo.lang1_label}</p>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => speak(card.lang1)} className="text-gray-400 hover:text-yellow-500 p-1">🔊</button>
+                  <div className="flex items-start gap-2">
+                    <div className="flex flex-col gap-0.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => speak(card.lang1, lang1Tts)}
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-900 border border-yellow-200 hover:bg-yellow-200"
+                        title={`${bookInfo.lang1_label}で読む`}
+                      >
+                        🔊 {bookInfo.lang1_label}
+                      </button>
+                      {card.lang2?.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => speak(card.lang2, 'ja-JP')}
+                          className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-50 text-yellow-800 border border-yellow-100 hover:bg-yellow-100"
+                          title={`${bookInfo.lang2_label}で読む`}
+                        >
+                          🔊 {bookInfo.lang2_label}
+                        </button>
+                      )}
+                    </div>
                     <span className="font-bold text-lg">
                       <RedBlock text={card.lang1} hidden={isHidden(card.id, 'lang1')} onReveal={() => reveal(card.id, 'lang1')} />
                     </span>
@@ -160,9 +227,21 @@ function FlashListContent() {
               {visibleCols.has('lang2') && (
                 <div className="min-w-[120px] flex-[2]">
                   <p className="text-[10px] text-gray-400 font-bold">{bookInfo.lang2_label}</p>
-                  <span className="text-gray-800 text-sm">
-                    <RedBlock text={card.lang2} hidden={isHidden(card.id, 'lang2')} onReveal={() => reveal(card.id, 'lang2')} />
-                  </span>
+                  <div className="flex items-start gap-2">
+                    {!visibleCols.has('lang1') && card.lang2?.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => speak(card.lang2, 'ja-JP')}
+                        className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-yellow-50 text-yellow-800 border border-yellow-100 hover:bg-yellow-100 shrink-0"
+                        title={`${bookInfo.lang2_label}で読む`}
+                      >
+                        🔊 {bookInfo.lang2_label}
+                      </button>
+                    )}
+                    <span className="text-gray-800 text-sm">
+                      <RedBlock text={card.lang2} hidden={isHidden(card.id, 'lang2')} onReveal={() => reveal(card.id, 'lang2')} />
+                    </span>
+                  </div>
                 </div>
               )}
               {visibleCols.has('lang3_sub') && (

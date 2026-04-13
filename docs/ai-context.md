@@ -12,6 +12,7 @@
 ### flashcards_v3
 
 - 単語カード。`set_id` でセットに紐づく。
+- **ローマ字 × Web Speech（ブラウザ TTS）:** 英語エンジンでローマ字を読ませると日本語の音とずれる。判定・再生テキストは **`src/lib/flash-kana-tts.ts`** に集約。**学習（`/flash/study`）**では **読み方トグル**（かなの音／自動／表示のまま）を選べ、選択は **`localStorage` `mirai.flash.studyTtsReadMode`** に保存。一覧・小テストは従来の自動判定。発音記号（IPA）を `lang1_sub` に載せる案はあるが、標準 TTS は IPA を安定読みしないため表示補助向き。
 - 言語列の意味（運用上の呼び方）:
   - `lang1` — 母国語/中国語など表面側
   - `lang2` — ひらがな等
@@ -22,10 +23,12 @@
 ### flashcard_sets
 
 - セット名・カテゴリ・科目・TTS言語・ラベル（`lang1_label` 等）を保持。
+- 本番 DB では **`set_name` と `category` が NOT NULL** のため、新規セット投入時は両方に文字列を指定する（`05_insert_kana_master_flashcards.sql` 参照）。
 
 ### learning_resources
 
 - 教材キーでの紐付け、解説テキスト、動画URL、画像。
+- **`resource_type`:** `page`（ページ別解説）、`common`（共通）、`toc`（目次・構造のみ。`explanation` に見出し、`hint_text` に `{"depth":1〜4,"seq":n}` JSON）。
 - **解説の多言語:** `[:ja]...[:zh]...` のような区切り形式を**壊さない**（パース前提のUIがある場合がある）。
 - **`material_total_pages`（任意）:** 教科書の総ページ数。管理画面で教材ごとに設定すると、計画の「量の目安」は登録ページ数ではなくこの値を優先して使う。未設定時は `resource_type: page` の `page_no` の種類数で集計。
 

@@ -12,7 +12,8 @@ type Role = 'student' | 'parent' | 'admin'
 export default function LoginPage() {
   const router = useRouter()
   const [role, setRole] = useState<Role>('student')
-  const [userList, setUserList] = useState<string[]>([])
+  /** 表示は nickname 優先。Auth メールは username@mirai-juku.internal（ASCII のみ可） */
+  const [userRows, setUserRows] = useState<{ username: string; nickname: string | null }[]>([])
   const [selected, setSelected] = useState('')
   const [password, setPassword] = useState('')
   const [pin, setPin] = useState('')
@@ -27,9 +28,12 @@ export default function LoginPage() {
     async function fetchUsers() {
       setUsersFetchError('')
       try {
-        const q = supabase.from('users').select('username').order('username')
+        const q = supabase.from('users').select('username,nickname').order('username')
         const { data, error: qErr } = await withTimeout(
-          q as unknown as Promise<{ data: { username: string }[] | null; error: { message: string } | null }>,
+          q as unknown as Promise<{
+            data: { username: string; nickname: string | null }[] | null
+            error: { message: string } | null
+          }>,
           20000,
           'ユーザー一覧'
         )
@@ -39,11 +43,10 @@ export default function LoginPage() {
           return
         }
         if (data) {
-          const names = data.map((r: { username: string }) => r.username)
-          setUserList(names)
-          if (names.length > 0) {
-            setSelected(names[0])
-            setParentName(names[0])
+          setUserRows(data)
+          if (data.length > 0) {
+            setSelected(data[0].username)
+            setParentName(data[0].username)
           }
         }
       } catch (e) {
@@ -102,40 +105,65 @@ export default function LoginPage() {
     }
 
     // ===== 生徒 =====
-    if (password !== STUDENT_PASSWORD) {
-      setError('パスワードが違います')
-      setLoading(false)
-      return
-    }
-
+    // 入力パスワードを優先（個別設定）、従来どおり Mirai2026 も許可
     const email = `${selected}@mirai-juku.internal`
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email,
-      password: STUDENT_PASSWORD,
-    })
 
-    if (!signInError) {
+    const { error: signIn1 } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+    if (!signIn1) {
       router.push('/student')
       return
     }
 
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { error: signInLegacy } = await supabase.auth.signInWithPassword({
       email,
       password: STUDENT_PASSWORD,
     })
+    if (!signInLegacy) {
+      router.push('/student')
+      return
+    }
+
+    let { error: signUpError } = await supabase.auth.signUp({
+      email,
+      password,
+    })
 
     if (signUpError) {
-      setError('ログインできませんでした。管理者に連絡してください。')
+      const msg = (signUpError.message ?? '').toLowerCase()
+      if (msg.includes('already') || msg.includes('registered')) {
+        setError('パスワードが違います')
+        setLoading(false)
+        return
+      }
+      signUpError = (
+        await supabase.auth.signUp({
+          email,
+          password: STUDENT_PASSWORD,
+        })
+      ).error
+    }
+
+    if (signUpError) {
+      setError('ログインできませんでした。パスワードかユーザー名を確認するか、管理者に連絡してください。')
       setLoading(false)
       return
     }
 
-    const { error: retryError } = await supabase.auth.signInWithPassword({
+    const { error: retry1 } = await supabase.auth.signInWithPassword({ email, password })
+    if (!retry1) {
+      router.push('/student')
+      return
+    }
+
+    const { error: retryLegacy } = await supabase.auth.signInWithPassword({
       email,
       password: STUDENT_PASSWORD,
     })
 
-    if (retryError) {
+    if (retryLegacy) {
       setError('ログインに失敗しました。管理者に連絡してください。')
       setLoading(false)
       return
@@ -195,7 +223,11 @@ export default function LoginPage() {
                 ) : (
                   <select value={selected} onChange={e => setSelected(e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-yellow-400 bg-white text-base">
-                    {userList.map(name => <option key={name} value={name}>{name}</option>)}
+                    {userRows.map(u => (
+                      <option key={u.username} value={u.username}>
+                        {u.nickname?.trim() || u.username}
+                      </option>
+                    ))}
                   </select>
                 )}
               </div>
@@ -210,7 +242,11 @@ export default function LoginPage() {
                 ) : (
                   <select value={parentName} onChange={e => setParentName(e.target.value)}
                     className="w-full border border-gray-200 rounded-xl px-4 py-3 text-gray-800 focus:outline-none focus:ring-2 focus:ring-green-400 bg-white text-base">
-                    {userList.map(name => <option key={name} value={name}>{name}</option>)}
+                    {userRows.map(u => (
+                      <option key={u.username} value={u.username}>
+                        {u.nickname?.trim() || u.username}
+                      </option>
+                    ))}
                   </select>
                 )}
               </div>
