@@ -15,6 +15,15 @@ type Card = {
   lang2_sub: string; lang3: string; lang3_sub: string; difficulty: number;
 }
 
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
 function RedBlock({ text, hidden, onReveal, isFullWidth = false }: { text: string; hidden: boolean; onReveal: () => void; isFullWidth?: boolean }) {
   if (!hidden) return <span className="break-words">{text || '—'}</span>
   return (
@@ -31,6 +40,7 @@ function FlashListContent() {
   const setId = searchParams.get('id'); const bookId = searchParams.get('bookId');
   const setName = searchParams.get('setName') ?? '単語一覧';
   const start = Number(searchParams.get('start') ?? 1); const end = Number(searchParams.get('end') ?? 9999);
+  const questionCountLimit = parseInt(searchParams.get('question_count') ?? '0', 10);
 
   const [cards, setCards] = useState<Card[]>([]);
   const [bookInfo, setBookInfo] = useState({ lang1_label: '単語', lang2_label: '日本語' });
@@ -76,13 +86,23 @@ function FlashListContent() {
       }
       setBookInfo({ lang1_label: lang1, lang2_label: lang2 })
       let query = supabase.from('flashcards_v3').select('*').gte('item_no', start).lte('item_no', end).order('item_no');
-      if (setId) query = query.eq('set_id', Number(setId));
+      if (setId) {
+        query = query.eq('set_id', Number(setId))
+      } else if (bookId) {
+        const { data: sets } = await supabase.from('flashcard_sets').select('id').eq('book_id', Number(bookId))
+        const ids = sets?.map(s => s.id) ?? []
+        if (ids.length) query = query.in('set_id', ids)
+      }
       const { data } = await query;
-      setCards(data ?? []);
+      let rows = (data ?? []) as Card[]
+      if (questionCountLimit > 0 && Number.isFinite(questionCountLimit)) {
+        rows = shuffle(rows).slice(0, Math.min(questionCountLimit, rows.length))
+      }
+      setCards(rows);
       setLoading(false);
     }
     fetchData();
-  }, [setId, bookId, start, end]);
+  }, [setId, bookId, start, end, questionCountLimit]);
 
   const isEnglish = bookInfo.lang1_label.includes('英') || bookInfo.lang1_label.includes('英語');
   const colOptions = [

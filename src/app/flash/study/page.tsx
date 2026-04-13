@@ -62,6 +62,7 @@ function StudyContent() {
   const setName = decodeURIComponent(searchParams.get('setName') ?? '')
   const startNo = Number(searchParams.get('start') ?? 1)
   const endNo   = Number(searchParams.get('end')   ?? 9999)
+  const questionLimit = parseInt(searchParams.get('question_count') ?? '0', 10)
 
   const [username,   setUsername]   = useState('')
   const [queue,      setQueue]      = useState<Card[]>([])
@@ -160,11 +161,15 @@ function StudyContent() {
         }
       }
 
+      if (questionLimit > 0 && Number.isFinite(questionLimit)) {
+        studyQueue = studyQueue.slice(0, Math.min(questionLimit, studyQueue.length))
+      }
+
       setQueue(studyQueue)
       setLoading(false)
     }
     init()
-  }, [setId, bookId, startNo, endNo, router])
+  }, [setId, bookId, startNo, endNo, questionLimit, router])
 
   const speak = useCallback((text: string, lang: string) => {
     if (!text || typeof window === 'undefined' || !window.speechSynthesis) return
