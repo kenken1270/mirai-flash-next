@@ -117,6 +117,8 @@ export default function TestPage() {
   const [rangeMode, setRangeMode]       = useState<'chapter' | 'numbers'>('chapter')
   const [layerStartPage, setLayerStartPage] = useState(0)
   const [layerEndPage, setLayerEndPage]     = useState(0)
+  const [questionPickMode, setQuestionPickMode] = useState<'all' | 'random'>('all')
+  const [randomQuestionCount, setRandomQuestionCount] = useState('20')
 
   useEffect(() => {
     async function init() {
@@ -226,6 +228,9 @@ export default function TestPage() {
   const startNum      = parseInt(itemStart) || 1
   const endNum        = parseInt(itemEnd)   || startNum
   const questionCount = Math.max(0, endNum - startNum + 1)
+  const rangeSpan     = Math.max(1, questionCount)
+  const randomN       = Math.min(Math.max(1, parseInt(randomQuestionCount, 10) || 20), rangeSpan)
+  const effectiveQuizCount = questionPickMode === 'all' ? questionCount : randomN
 
   function handleStart() {
     if (!selectedBook) return
@@ -236,6 +241,8 @@ export default function TestPage() {
       e = Math.max(rangeMeta.absMin, Math.min(e, rangeMeta.absMax))
       if (e < s) [s, e] = [e, s]
     }
+    const span = Math.max(1, e - s + 1)
+    const pick = Math.min(Math.max(1, parseInt(randomQuestionCount, 10) || 20), span)
     const params = new URLSearchParams({
       book_id:     String(selectedBook.id),
       item_start:  String(s),
@@ -248,6 +255,7 @@ export default function TestPage() {
       lang2_tts:   lang2TtsLang,
       strictness,
     })
+    if (questionPickMode === 'random') params.set('question_count', String(pick))
     router.push('/flash/quiz?' + params.toString())
   }
 
@@ -507,6 +515,65 @@ export default function TestPage() {
 
             <div className="border-t border-gray-100" />
 
+            {/* ②b 出題数（範囲内ランダム） */}
+            <div>
+              <p className="text-sm font-bold text-gray-600 mb-2">🔢 出題数</p>
+              <p className="text-xs text-gray-500 mb-2">上で選んだ範囲の中から、出す問題数を決めます（ランダムは毎回シャッフル）。</p>
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setQuestionPickMode('all')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition
+                    ${questionPickMode === 'all' ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                >
+                  範囲の全問
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setQuestionPickMode('random')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold border transition
+                    ${questionPickMode === 'random' ? 'bg-purple-500 text-white border-purple-500' : 'bg-gray-50 text-gray-600 border-gray-200'}`}
+                >
+                  ランダムで
+                </button>
+              </div>
+              {questionPickMode === 'random' && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={randomQuestionCount}
+                      onChange={e => setRandomQuestionCount(e.target.value.replace(/[^0-9]/g, ''))}
+                      className="w-20 border border-gray-200 rounded-xl px-3 py-2 text-center font-bold text-sm focus:border-purple-400 outline-none"
+                      aria-label="ランダム出題数"
+                    />
+                    <span className="text-sm text-gray-600">問</span>
+                    <span className="text-xs text-gray-400">（最大 {rangeSpan} 問）</span>
+                  </div>
+                  <div className="flex gap-2 flex-wrap">
+                    {[10, 20, 30, 50, 100].map(n => {
+                      const tooBig = n > rangeSpan
+                      return (
+                        <button
+                          key={n}
+                          type="button"
+                          onClick={() => setRandomQuestionCount(String(Math.min(n, rangeSpan)))}
+                          disabled={tooBig}
+                          className={`text-xs px-3 py-1.5 rounded-full border font-bold transition
+                            ${tooBig ? 'opacity-40 cursor-not-allowed border-gray-100' : 'bg-gray-50 text-gray-600 border-gray-200 hover:border-gray-300'}`}
+                        >
+                          {n}問
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-gray-100" />
+
             {/* ③ 出題方向 */}
             <div>
               <p className="text-sm font-bold text-gray-600 mb-2">🔄 出題方向</p>
@@ -572,7 +639,7 @@ export default function TestPage() {
             {/* テスト開始ボタン */}
             <button onClick={handleStart} disabled={!selectedBook}
               className="w-full bg-gradient-to-r from-purple-500 to-indigo-600 text-white py-4 rounded-2xl font-bold text-lg shadow-md hover:opacity-90 transition disabled:opacity-40">
-              🚀 テスト開始！（{questionCount}問）
+              🚀 テスト開始！（{effectiveQuizCount}問）
             </button>
           </div>
         </div>

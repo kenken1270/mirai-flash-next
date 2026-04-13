@@ -103,6 +103,9 @@ function QuizContent() {
   const setIdParam = parseInt(searchParams.get('id') ?? '0', 10)
   const itemStart = parseInt(searchParams.get('item_start') ?? searchParams.get('start') ?? '1', 10)
   const itemEnd = parseInt(searchParams.get('item_end') ?? searchParams.get('end') ?? '999999', 10)
+  const questionCountParam = parseInt(searchParams.get('question_count') ?? '0', 10)
+  const questionCountLimit =
+    Number.isFinite(questionCountParam) && questionCountParam > 0 ? questionCountParam : 0
   const mode = (searchParams.get('mode') as QuizMode) || 'choice'
   const direction = (searchParams.get('direction') as Direction) || 'lang1to2'
   const strictness = (searchParams.get('strictness') as Strictness) || 'normal'
@@ -181,11 +184,14 @@ function QuizContent() {
       const { data } = await query
       const list = (data ?? []) as Card[]
       setCards(list)
-      setDeck(shuffle(list))
+      const shuffled = shuffle(list)
+      const deckList =
+        questionCountLimit > 0 ? shuffled.slice(0, Math.min(questionCountLimit, shuffled.length)) : shuffled
+      setDeck(deckList)
       setLoading(false)
     }
     fetchCards()
-  }, [bookId, setIdParam, itemStart, itemEnd, router])
+  }, [bookId, setIdParam, itemStart, itemEnd, questionCountLimit, router])
 
   const current = deck[currentIdx]
   const total = deck.length
@@ -276,9 +282,10 @@ function QuizContent() {
         direction,
         strictness,
       })
+      if (questionCountLimit > 0) q.set('question_count', String(questionCountLimit))
       router.push('/flash/quiz/result?' + q.toString())
     },
-    [finishing, total, bookId, setIdParam, itemStart, itemEnd, mode, direction, strictness, router]
+    [finishing, total, bookId, setIdParam, itemStart, itemEnd, questionCountLimit, mode, direction, strictness, router]
   )
 
   const handleChoice = (picked: string) => {
